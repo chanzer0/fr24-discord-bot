@@ -1,0 +1,180 @@
+from __future__ import annotations
+
+import aiosqlite
+
+from .utils import utc_now_iso
+
+
+_SCHEMA_SQL = '''
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS guild_settings (
+    guild_id TEXT PRIMARY KEY,
+    notify_channel_id TEXT NOT NULL,
+    updated_by TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ("aircraft", "airport")),
+    code TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_checked_at TEXT,
+    UNIQUE (guild_id, user_id, type, code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscriptions_guild_type_code
+    ON subscriptions (guild_id, type, code);
+
+CREATE TABLE IF NOT EXISTS notification_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subscription_id INTEGER NOT NULL,
+    flight_id TEXT NOT NULL,
+    notified_at TEXT NOT NULL,
+    FOREIGN KEY(subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE,
+    UNIQUE (subscription_id, flight_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_log_notified_at
+    ON notification_log (notified_at);
+'''
+
+
+class Database:
+    def __init__(self, path: str) -> None:
+        self._path = path
+        self._conn: aiosqlite.Connection | None = None
+
+    async def connect(self) -> None:
+        self._conn = await aiosqlite.connect(self._path)
+        self._conn.row_factory = aiosqlite.Row
+        await self._conn.execute("PRAGMA foreign_keys = ON")
+        await self._conn.execute("PRAGMA journal_mode = WAL")
+        await self._conn.execute("PRAGMA busy_timeout = 5000")
+
+    async def close(self) -> None:
+        if self._conn:
+            await self._conn.close()
+
+    async def init(self) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.executescript(_SCHEMA_SQL)
+        await self._conn.commit()
+
+    async def _changes(self) -> int:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute("SELECT changes()") as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
+
+    async def get_guild_settings(self, guild_id: str) -> dict | None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            "SELECT guild_id, notify_channel_id FROM guild_settings WHERE guild_id = ?",
+            (guild_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def fetch_guild_channels(self) -> dict[str, str]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            "SELECT guild_id, notify_channel_id FROM guild_settings"
+        ) as cur:
+            rows = await cur.fetchall()
+        return {row["guild_id"]: row["notify_channel_id"] for row in rows}
+
+    async def set_guild_notify_channel(self, guild_id: str, channel_id: str, updated_by: str) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            INSERT INTO guild_settings (guild_id, notify_channel_id, updated_by, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET notify_channel_id = excluded.notify_channel_id,
+                          updated_by = excluded.updated_by,
+                          updated_at = excluded.updated_at
+            ''',
+            (guild_id, channel_id, updated_by, utc_now_iso()),
+        )
+        await self._conn.commit()
+
+    async def add_subscription(self, guild_id: str, user_id: str, sub_type: str, code: str) -> bool:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            INSERT OR IGNORE INTO subscriptions (guild_id, user_id, type, code, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ''',
+            (guild_id, user_id, sub_type, code, utc_now_iso()),
+        )
+        await self._conn.commit()
+        return await self._changes() == 1
+
+    async def remove_subscription(self, guild_id: str, user_id: str, sub_type: str, code: str) -> bool:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            DELETE FROM subscriptions
+            WHERE guild_id = ? AND user_id = ? AND type = ? AND code = ?
+            ''',
+            (guild_id, user_id, sub_type, code),
+        )
+        await self._conn.commit()
+        return await self._changes() > 0
+
+    async def fetch_subscriptions(self) -> list[dict]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            '''
+            SELECT id, guild_id, user_id, type, code
+            FROM subscriptions
+            '''
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(row) for row in rows]
+
+    async def notification_logged(self, subscription_id: int, flight_id: str) -> bool:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            '''
+            SELECT 1 FROM notification_log WHERE subscription_id = ? AND flight_id = ?
+            ''',
+            (subscription_id, flight_id),
+        ) as cur:
+            row = await cur.fetchone()
+        return row is not None
+
+    async def log_notification(self, subscription_id: int, flight_id: str) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            INSERT OR IGNORE INTO notification_log (subscription_id, flight_id, notified_at)
+            VALUES (?, ?, ?)
+            ''',
+            (subscription_id, flight_id, utc_now_iso()),
+        )
+        await self._conn.commit()
+
+    async def cleanup_notifications(self, older_than_iso: str) -> int:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            "DELETE FROM notification_log WHERE notified_at < ?",
+            (older_than_iso,),
+        )
+        await self._conn.commit()
+        return await self._changes()

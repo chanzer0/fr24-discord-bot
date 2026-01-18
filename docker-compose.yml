@@ -1,0 +1,10 @@
+version: "3.9"
+services:
+  fr24-discord-bot:
+    build: .
+    image: fr24-discord-bot:local
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
