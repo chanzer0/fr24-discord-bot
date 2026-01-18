@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>fr24-discord-bot</Name>
+  <Repository>ghcr.io/chanzer0/fr24-discord-bot:main</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/chanzer0/fr24-discord-bot</Support>
+  <Project>https://github.com/chanzer0/fr24-discord-bot</Project>
+  <Overview>Discord bot that posts Flightradar24 aircraft or inbound airport alerts into a guild default channel.</Overview>
+  <Category>Tools:Other</Category>
+  <WebUI></WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/chanzer0/fr24-discord-bot/main/unraid-template.xml</TemplateURL>
+  <Icon></Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="AppData" Target="/data" Default="/mnt/user/appdata/fr24-discord-bot" Mode="rw" Description="Persistent data path for SQLite." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/fr24-discord-bot</Config>
+  <Config Name="Discord Token" Target="DISCORD_TOKEN" Default="" Mode="" Description="Discord bot token" Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="FR24 API Key" Target="FR24_API_KEY" Default="" Mode="" Description="Flightradar24 API token" Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Bot Owner ID" Target="BOT_OWNER_ID" Default="" Mode="" Description="Discord user ID allowed to run /set-notify-channel" Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="SQLite Path" Target="SQLITE_PATH" Default="/data/bot.db" Mode="" Description="SQLite database file path" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Poll Interval Seconds" Target="POLL_INTERVAL_SECONDS" Default="60" Mode="" Description="Base polling interval in seconds" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Poll Jitter Seconds" Target="POLL_JITTER_SECONDS" Default="5" Mode="" Description="Adds jitter to polling interval to avoid bursts" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="FR24 Request Delay Seconds" Target="FR24_REQUEST_DELAY_SECONDS" Default="0.2" Mode="" Description="Delay between FR24 requests in a poll cycle" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Notification Retention Days" Target="NOTIFICATION_RETENTION_DAYS" Default="14" Mode="" Description="Days to keep notification dedupe logs" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="FR24 Web Base URL" Target="FR24_WEB_BASE_URL" Default="https://www.flightradar24.com" Mode="" Description="Base URL for FR24 web links" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Log Level" Target="LOG_LEVEL" Default="INFO" Mode="" Description="Logging level (DEBUG, INFO, WARNING, ERROR)" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>

@@ -44,7 +44,7 @@ Requires Python 3.11+ (matches the Docker image).
 
 ## Unraid deployment
 - Build and push image via GitHub Actions to GHCR.
-- In Unraid, create a container from ghcr.io/<owner>/<repo>:main.
+- Use the included Unraid template (unraid-template.xml) or create a container manually.
 - Map /data to a persistent host path.
 - Configure environment variables (see .env.example).
 See docs/deploy-unraid.md for details.
@@ -58,3 +58,4 @@ See docs/deploy-unraid.md for details.
 - docs/commands.md
 - docs/deploy-unraid.md
 - docs/rate-limits.md
+- unraid-template.xml

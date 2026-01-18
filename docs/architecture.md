@@ -13,7 +13,16 @@
 4. For each matching flight, the bot sends an embed to the guild's notify channel and tags the user.
 5. A dedupe log prevents repeated notifications for the same flight.
 
+## Storage
+- SQLite file at SQLITE_PATH (default /data/bot.db).
+- Tables:
+  - guild_settings: one row per guild with notify channel ID.
+  - subscriptions: one row per user per (type, code).
+  - notification_log: dedupe log to avoid repeat alerts.
+- WAL mode and busy timeout are enabled for stability on Unraid.
+
 ## Resource safeguards
 - Configurable polling interval and small request delay between FR24 calls.
-- SQLite WAL mode and busy timeout for stability.
-- Daily cleanup of notification logs.
+- Batch FR24 calls by (type, code) to avoid duplicate requests.
+- Daily cleanup of notification logs to cap database growth.
+- No full flight history is stored; only dedupe entries are retained.
