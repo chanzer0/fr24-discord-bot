@@ -20,6 +20,28 @@ def _resolve_subscription_type(interaction: discord.Interaction) -> str | None:
 def register(tree, db, config, reference_data) -> None:
     log = logging.getLogger(__name__)
 
+    def _clean_name(value: str | None) -> str | None:
+        if not value:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    async def _resolve_guild_name(interaction: discord.Interaction) -> str | None:
+        guild = interaction.guild or interaction.client.get_guild(interaction.guild_id)
+        name = _clean_name(getattr(guild, "name", None)) if guild else None
+        if name:
+            return name
+        try:
+            fetched = await interaction.client.fetch_guild(interaction.guild_id)
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException) as exc:
+            log.warning(
+                "subscribe fetch_guild failed guild_id=%s error=%s",
+                interaction.guild_id,
+                exc,
+            )
+            return None
+        return _clean_name(getattr(fetched, "name", None))
+
     async def code_autocomplete(
         interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
@@ -74,9 +96,10 @@ def register(tree, db, config, reference_data) -> None:
             )
             return
 
-        guild = interaction.guild or interaction.client.get_guild(interaction.guild_id)
-        guild_name = guild.name if guild else None
-        user_name = getattr(interaction.user, "display_name", None) or interaction.user.name
+        guild_name = await _resolve_guild_name(interaction)
+        user_name = _clean_name(
+            getattr(interaction.user, "display_name", None) or interaction.user.name
+        )
         log.info(
             "subscribe request guild_id=%s guild_name=%s user_id=%s user_name=%s type=%s code=%s",
             interaction.guild_id,

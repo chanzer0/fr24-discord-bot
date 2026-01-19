@@ -121,6 +121,28 @@ class ChannelRefTransformer(app_commands.Transformer):
 def register(tree, db, config) -> None:
     log = logging.getLogger(__name__)
 
+    def _clean_name(value: str | None) -> str | None:
+        if not value:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    async def _resolve_guild_name(interaction: discord.Interaction) -> str | None:
+        guild = interaction.guild or interaction.client.get_guild(interaction.guild_id)
+        name = _clean_name(getattr(guild, "name", None)) if guild else None
+        if name:
+            return name
+        try:
+            fetched = await interaction.client.fetch_guild(interaction.guild_id)
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException) as exc:
+            log.warning(
+                "set-notify-channel fetch_guild failed guild_id=%s error=%s",
+                interaction.guild_id,
+                exc,
+            )
+            return None
+        return _clean_name(getattr(fetched, "name", None))
+
     @tree.command(
         name="set-notify-channel",
         description="Set the default notification channel for this guild.",
@@ -155,9 +177,10 @@ def register(tree, db, config) -> None:
             )
             return
 
-        guild = interaction.guild or interaction.client.get_guild(interaction.guild_id)
-        guild_name = guild.name if guild else None
-        user_name = getattr(interaction.user, "display_name", None) or interaction.user.name
+        guild_name = await _resolve_guild_name(interaction)
+        user_name = _clean_name(
+            getattr(interaction.user, "display_name", None) or interaction.user.name
+        )
         log.info(
             "set-notify-channel update guild_id=%s guild_name=%s channel_id=%s channel_name=%s user_id=%s user_name=%s",
             interaction.guild_id,
@@ -172,7 +195,7 @@ def register(tree, db, config) -> None:
             channel_id=str(channel.id),
             updated_by=str(interaction.user.id),
             guild_name=guild_name,
-            channel_name=channel.name,
+            channel_name=_clean_name(channel.name),
             updated_by_name=user_name,
         )
         await interaction.response.send_message(
