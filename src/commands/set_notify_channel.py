@@ -1,8 +1,12 @@
+import logging
+
 import discord
 from discord import app_commands
 
 
 def register(tree, db, config) -> None:
+    log = logging.getLogger(__name__)
+
     @tree.command(name="set-notify-channel", description="Set the default notification channel for this guild.")
     @app_commands.describe(channel="Channel to use for notifications")
     async def set_notify_channel(interaction: discord.Interaction, channel: discord.TextChannel) -> None:
@@ -32,3 +36,24 @@ def register(tree, db, config) -> None:
             f"Notifications will be posted in {channel.mention}.",
             ephemeral=True,
         )
+
+    @set_notify_channel.error
+    async def set_notify_channel_error(interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
+        data = getattr(interaction, "data", None)
+        raw_options = None
+        if isinstance(data, dict):
+            raw_options = data.get("options")
+        log.error(
+            "set-notify-channel error: %s guild_id=%s user_id=%s channel_id=%s options=%s data=%s",
+            error,
+            interaction.guild_id,
+            getattr(interaction.user, "id", None),
+            getattr(interaction, "channel_id", None),
+            raw_options,
+            data,
+        )
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "I couldn't parse that channel. Try selecting from the channel picker and rerun the command.",
+                ephemeral=True,
+            )
