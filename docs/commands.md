@@ -6,6 +6,9 @@ Owner-only command to set the guild-wide default channel for notifications.
 Example:
 - /set-notify-channel #flight-alerts
 
+Notes:
+- You can pass a #channel mention, channel ID, or exact channel name.
+
 ## /subscribe
 Subscribe to aircraft type or inbound airport alerts.
 
