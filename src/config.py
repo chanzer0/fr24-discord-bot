@@ -51,7 +51,7 @@ def load_config() -> Config:
         poll_interval_seconds=_int_env("POLL_INTERVAL_SECONDS", 60),
         poll_jitter_seconds=_int_env("POLL_JITTER_SECONDS", 5),
         fr24_request_delay_seconds=_float_env("FR24_REQUEST_DELAY_SECONDS", 0.2),
-        notification_retention_days=_int_env("NOTIFICATION_RETENTION_DAYS", 14),
+        notification_retention_days=_int_env("NOTIFICATION_RETENTION_DAYS", 7),
         sqlite_path=os.getenv("SQLITE_PATH", "/data/bot.db"),
         fr24_web_base_url=os.getenv("FR24_WEB_BASE_URL", "https://www.flightradar24.com"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),

@@ -29,7 +29,7 @@
   <Config Name="Poll Interval Seconds" Target="POLL_INTERVAL_SECONDS" Default="60" Mode="" Description="Base polling interval in seconds" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="Poll Jitter Seconds" Target="POLL_JITTER_SECONDS" Default="5" Mode="" Description="Adds jitter to polling interval to avoid bursts" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="FR24 Request Delay Seconds" Target="FR24_REQUEST_DELAY_SECONDS" Default="0.2" Mode="" Description="Delay between FR24 requests in a poll cycle" Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Notification Retention Days" Target="NOTIFICATION_RETENTION_DAYS" Default="14" Mode="" Description="Days to keep notification dedupe logs" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Notification Retention Days" Target="NOTIFICATION_RETENTION_DAYS" Default="7" Mode="" Description="Days to keep notification dedupe logs" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="FR24 Web Base URL" Target="FR24_WEB_BASE_URL" Default="https://www.flightradar24.com" Mode="" Description="Base URL for FR24 web links" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="Log Level" Target="LOG_LEVEL" Default="INFO" Mode="" Description="Logging level (DEBUG, INFO, WARNING, ERROR)" Type="Variable" Display="advanced" Required="false" Mask="false"/>
 </Container>

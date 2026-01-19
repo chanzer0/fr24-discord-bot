@@ -34,7 +34,7 @@ Requires Python 3.11+ (matches the Docker image).
 - POLL_INTERVAL_SECONDS (default 60)
 - POLL_JITTER_SECONDS (default 5)
 - FR24_REQUEST_DELAY_SECONDS (default 0.2)
-- NOTIFICATION_RETENTION_DAYS (default 14)
+- NOTIFICATION_RETENTION_DAYS (default 7)
 - SQLITE_PATH (default /data/bot.db)
 - FR24_WEB_BASE_URL (default https://www.flightradar24.com)
 - LOG_LEVEL (default INFO)

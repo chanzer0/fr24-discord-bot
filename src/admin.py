@@ -131,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
     recent.add_argument("--subscription", type=int)
 
     clear = sub.add_parser("clear-notifications", help="Delete old notification logs")
-    clear.add_argument("--older-than-days", type=int, default=14)
+    clear.add_argument("--older-than-days", type=int, default=7)
 
     sub.add_parser("export-subs", help="Export subscriptions as CSV")
     return parser

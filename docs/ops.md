@@ -52,7 +52,7 @@ python -m src.admin recent --subscription 10
 Deletes notification log entries older than N days.
 
 ```bash
-python -m src.admin clear-notifications --older-than-days 14
+python -m src.admin clear-notifications --older-than-days 7
 ```
 
 ### export-subs
