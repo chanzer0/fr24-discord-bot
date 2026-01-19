@@ -53,6 +53,10 @@ See docs/deploy-unraid.md for details.
 - The bot stores subscription metadata and a notification dedupe log only.
 - Notification logs are pruned daily based on NOTIFICATION_RETENTION_DAYS.
 
+## Logs and startup checks
+- On startup, the bot logs configuration (non-sensitive), DB counts, and intent/voice status.
+- PyNaCl warnings only affect voice features, which are not used by this bot.
+
 ## Docs
 - docs/architecture.md
 - docs/commands.md

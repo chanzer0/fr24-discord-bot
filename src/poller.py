@@ -14,6 +14,7 @@ from .notify import build_embed, build_fr24_link, build_view
 
 async def poll_loop(bot, db, fr24, config) -> None:
     log = logging.getLogger(__name__)
+    log.info("Poll loop started")
     while True:
         try:
             await poll_once(bot, db, fr24, config)
@@ -60,6 +61,7 @@ async def poll_once(bot, db, fr24, config) -> None:
 
 async def cleanup_loop(db, config) -> None:
     log = logging.getLogger(__name__)
+    log.info("Cleanup loop started (retention_days=%s)", config.notification_retention_days)
     while True:
         cutoff = datetime.now(timezone.utc) - timedelta(days=config.notification_retention_days)
         deleted = await db.cleanup_notifications(cutoff.isoformat())

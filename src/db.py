@@ -178,3 +178,18 @@ class Database:
         )
         await self._conn.commit()
         return await self._changes()
+
+    async def get_counts(self) -> dict[str, int]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+
+        async def _count(table: str) -> int:
+            async with self._conn.execute(f"SELECT COUNT(*) FROM {table}") as cur:
+                row = await cur.fetchone()
+            return int(row[0]) if row else 0
+
+        return {
+            "guild_settings": await _count("guild_settings"),
+            "subscriptions": await _count("subscriptions"),
+            "notification_log": await _count("notification_log"),
+        }

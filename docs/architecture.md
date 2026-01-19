@@ -26,3 +26,7 @@
 - Batch FR24 calls by (type, code) to avoid duplicate requests.
 - Daily cleanup of notification logs to cap database growth.
 - No full flight history is stored; only dedupe entries are retained.
+
+## Observability
+- Startup checks log non-sensitive config, DB counts, and capability status.
+- Poller logs cycle completion and cleanup logs pruned rows.
