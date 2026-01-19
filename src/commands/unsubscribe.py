@@ -69,7 +69,7 @@ def register(tree, db, config, reference_data) -> None:
         normalized = normalize_code(subscription_type.value, code)
         if not normalized:
             await interaction.response.send_message(
-                "Invalid ICAO code format. Aircraft codes are 3-6 letters/numbers; airports are 4 letters.",
+                "Invalid code format. Codes must be at least 2 characters.",
                 ephemeral=True,
             )
             return

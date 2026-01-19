@@ -4,7 +4,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 
 ## Features
 - Subscribe/unsubscribe to aircraft ICAO type codes (e.g., A388, C172)
-- Subscribe/unsubscribe to inbound airport ICAO codes (e.g., WAW)
+- Subscribe/unsubscribe to inbound airport codes (IATA or ICAO, e.g., WAW or EPWA)
 - Owner-only default notification channel per guild via /set-notify-channel
 - Skycards-powered autocomplete for airports/models with owner refresh
 - Background polling with dedupe and backoff-friendly pacing
@@ -39,7 +39,7 @@ Requires Python 3.11+ (matches the Docker image).
 - DISCORD_TOKEN
 - FR24_API_KEY
 - BOT_OWNER_IDS (CSV of Discord user IDs)
-- POLL_INTERVAL_SECONDS (default 60)
+- POLL_INTERVAL_SECONDS (default 300)
 - POLL_JITTER_SECONDS (default 5)
 - FR24_REQUEST_DELAY_SECONDS (default 0.2)
 - FR24_MAX_REQUESTS_PER_MIN (default 10)

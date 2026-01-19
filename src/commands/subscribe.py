@@ -91,7 +91,7 @@ def register(tree, db, config, reference_data) -> None:
         normalized = normalize_code(subscription_type.value, code)
         if not normalized:
             await interaction.response.send_message(
-                "Invalid ICAO code format. Aircraft codes are 3-6 letters/numbers; airports are 4 letters.",
+                "Invalid code format. Codes must be at least 2 characters.",
                 ephemeral=True,
             )
             return
@@ -126,10 +126,13 @@ def register(tree, db, config, reference_data) -> None:
                     "Warning: that aircraft ICAO is not in the Skycards reference data."
                 )
         else:
-            found = await reference_data.get_airport(normalized)
+            if len(normalized) == 3:
+                found = await reference_data.get_airport_by_iata(normalized)
+            else:
+                found = await reference_data.get_airport(normalized)
             if not found and await reference_data.has_airports():
                 warning = (
-                    "Warning: that airport ICAO is not in the Skycards reference data."
+                    "Warning: that airport code is not in the Skycards reference data."
                 )
 
         if inserted:

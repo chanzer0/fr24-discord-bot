@@ -179,17 +179,22 @@ class ReferenceDataCache:
         self._airports: list[AirportRef] = []
         self._models: list[ModelRef] = []
         self._airports_by_icao: dict[str, AirportRef] = {}
+        self._airports_by_iata: dict[str, AirportRef] = {}
         self._models_by_icao: dict[str, ModelRef] = {}
 
     def set_airports(self, rows: Iterable[dict]) -> None:
         refs = []
+        iata_map: dict[str, AirportRef] = {}
         for row in rows:
             ref = _build_airport_ref(row)
             if ref:
                 refs.append(ref)
+                if ref.iata and ref.iata not in iata_map:
+                    iata_map[ref.iata] = ref
         refs.sort(key=lambda item: item.icao)
         self._airports = refs
         self._airports_by_icao = {ref.icao: ref for ref in refs}
+        self._airports_by_iata = iata_map
 
     def set_models(self, rows: Iterable[dict]) -> None:
         refs = []
@@ -209,6 +214,9 @@ class ReferenceDataCache:
 
     def get_airport(self, icao: str) -> AirportRef | None:
         return self._airports_by_icao.get(_normalize_code(icao))
+
+    def get_airport_by_iata(self, iata: str) -> AirportRef | None:
+        return self._airports_by_iata.get(_normalize_code(iata))
 
     def get_model(self, icao: str) -> ModelRef | None:
         return self._models_by_icao.get(_normalize_code(icao))
@@ -295,6 +303,10 @@ class ReferenceDataService:
     async def get_airport(self, icao: str) -> AirportRef | None:
         async with self._lock:
             return self._cache.get_airport(icao)
+
+    async def get_airport_by_iata(self, iata: str) -> AirportRef | None:
+        async with self._lock:
+            return self._cache.get_airport_by_iata(iata)
 
     async def get_model(self, icao: str) -> ModelRef | None:
         async with self._lock:
