@@ -81,14 +81,45 @@ def _ensure_reference_tables(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _ensure_credits_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS fr24_credits (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            remaining INTEGER,
+            consumed INTEGER,
+            updated_at TEXT NOT NULL
+        )
+        '''
+    )
+    conn.commit()
+
+
+def _ensure_bot_settings_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS bot_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        '''
+    )
+    conn.commit()
+
+
 def cmd_status(conn: sqlite3.Connection) -> None:
     _ensure_core_columns(conn)
     _ensure_reference_tables(conn)
+    _ensure_credits_table(conn)
+    _ensure_bot_settings_table(conn)
     tables = (
         "guild_settings",
         "subscriptions",
         "notification_log",
         "usage_cache",
+        "fr24_credits",
+        "bot_settings",
         "reference_airports",
         "reference_models",
         "reference_meta",

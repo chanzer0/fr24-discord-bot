@@ -35,11 +35,13 @@ async def run_startup_checks(bot, db, config) -> None:
 
     counts = await db.get_counts()
     log.info(
-        "Database counts: guild_settings=%s subscriptions=%s notification_log=%s usage_cache=%s reference_airports=%s reference_models=%s reference_meta=%s",
+        "Database counts: guild_settings=%s subscriptions=%s notification_log=%s usage_cache=%s fr24_credits=%s bot_settings=%s reference_airports=%s reference_models=%s reference_meta=%s",
         counts["guild_settings"],
         counts["subscriptions"],
         counts["notification_log"],
         counts["usage_cache"],
+        counts["fr24_credits"],
+        counts["bot_settings"],
         counts["reference_airports"],
         counts["reference_models"],
         counts["reference_meta"],
@@ -59,5 +61,14 @@ async def run_startup_checks(bot, db, config) -> None:
             )
         else:
             log.info("Reference %s: empty (run /refresh-reference)", dataset)
+
+    polling_enabled = await db.get_setting("polling_enabled")
+    poll_interval = await db.get_setting("poll_interval_seconds")
+    if polling_enabled is not None or poll_interval is not None:
+        log.info(
+            "Polling settings: enabled=%s interval_seconds=%s",
+            polling_enabled,
+            poll_interval,
+        )
 
     log.info("Startup checks: complete")

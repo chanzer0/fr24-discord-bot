@@ -54,6 +54,19 @@ CREATE TABLE IF NOT EXISTS usage_cache (
     fetched_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS fr24_credits (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    remaining INTEGER,
+    consumed INTEGER,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bot_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS reference_airports (
     icao TEXT PRIMARY KEY,
     iata TEXT,
@@ -349,10 +362,64 @@ class Database:
             "subscriptions": await _count("subscriptions"),
             "notification_log": await _count("notification_log"),
             "usage_cache": await _count("usage_cache"),
+            "fr24_credits": await _count("fr24_credits"),
+            "bot_settings": await _count("bot_settings"),
             "reference_airports": await _count("reference_airports"),
             "reference_models": await _count("reference_models"),
             "reference_meta": await _count("reference_meta"),
         }
+
+    async def get_fr24_credits(self) -> dict | None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            "SELECT remaining, consumed, updated_at FROM fr24_credits WHERE id = 1"
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def set_fr24_credits(
+        self, remaining: int | None, consumed: int | None, updated_at: str
+    ) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            INSERT INTO fr24_credits (id, remaining, consumed, updated_at)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id)
+            DO UPDATE SET remaining = excluded.remaining,
+                          consumed = excluded.consumed,
+                          updated_at = excluded.updated_at
+            ''',
+            (remaining, consumed, updated_at),
+        )
+        await self._conn.commit()
+
+    async def get_setting(self, key: str) -> str | None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            "SELECT value FROM bot_settings WHERE key = ?",
+            (key,),
+        ) as cur:
+            row = await cur.fetchone()
+        return row["value"] if row else None
+
+    async def set_setting(self, key: str, value: str, updated_at: str) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            INSERT INTO bot_settings (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key)
+            DO UPDATE SET value = excluded.value,
+                          updated_at = excluded.updated_at
+            ''',
+            (key, value, updated_at),
+        )
+        await self._conn.commit()
 
     async def fetch_user_subscription_codes(
         self, guild_id: str, user_id: str, sub_type: str

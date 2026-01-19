@@ -36,5 +36,17 @@ Example:
 Notes:
 - Run once after first deploy to seed autocomplete results.
 
+## /credits-remaining
+Show the latest cached FR24 credits remaining value (updated after each FR24 API call).
+
+## /start
+Owner-only command to start the FR24 polling loop.
+
+## /stop
+Owner-only command to stop the FR24 polling loop after the current cycle.
+
+## /set-polling-interval
+Owner-only command to change the polling interval (in seconds).
+
 ## /help
 Show usage and tips.

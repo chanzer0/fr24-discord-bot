@@ -16,6 +16,10 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 - /subscribe <aircraft|airport> <code>
 - /unsubscribe <aircraft|airport> <code>
 - /refresh-reference <airports|models|all> (owner-only)
+- /credits-remaining
+- /start (owner-only)
+- /stop (owner-only)
+- /set-polling-interval <seconds> (owner-only)
 - /help
 
 ## Quickstart (local)
@@ -61,6 +65,7 @@ See docs/deploy-unraid.md for details.
 
 ## Credits visibility
 - Each FR24-powered notification includes the credits consumed and remaining from the API response headers.
+- The latest credits remaining value is stored in SQLite and available via /credits-remaining.
 
 ## Logs and startup checks
 - On startup, the bot logs configuration (non-sensitive), DB counts, and intent/voice status.

@@ -21,6 +21,8 @@
   - guild_settings: one row per guild with notify channel ID, plus guild/channel names.
   - subscriptions: one row per user per (type, code), including user/guild display names.
   - notification_log: dedupe log to avoid repeat alerts.
+  - fr24_credits: latest credits remaining/consumed from FR24 response headers.
+  - bot_settings: global bot settings like polling interval and enabled state.
   - reference_airports: ICAO/IATA and basic airport details used for autocomplete.
   - reference_models: ICAO and aircraft model details used for autocomplete.
   - reference_meta: metadata for the reference datasets.

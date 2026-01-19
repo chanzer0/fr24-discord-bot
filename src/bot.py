@@ -10,6 +10,7 @@ from .db import Database
 from .fr24.client import Fr24Client
 from .health import run_startup_checks
 from .poller import cleanup_loop, poll_loop
+from .poller_state import PollerState
 from .reference_data import ReferenceDataService
 
 
@@ -22,14 +23,36 @@ class FlightBot(discord.Client):
         self.db = db
         self.fr24 = fr24
         self.reference_data = reference_data
+        self.poller_state: PollerState | None = None
 
     async def setup_hook(self) -> None:
         await self.db.connect()
         await self.db.init()
         await self.reference_data.load_from_db()
-        setup_commands(self.tree, self.db, self.config, self.fr24, self.reference_data)
+        poll_interval = self.config.poll_interval_seconds
+        stored_interval = await self.db.get_setting("poll_interval_seconds")
+        if stored_interval:
+            try:
+                poll_interval = int(stored_interval)
+            except ValueError:
+                logging.getLogger(__name__).warning(
+                    "Invalid poll_interval_seconds setting: %s", stored_interval
+                )
+        stored_enabled = await self.db.get_setting("polling_enabled")
+        polling_enabled = True
+        if stored_enabled is not None:
+            polling_enabled = stored_enabled.strip().lower() in ("1", "true", "yes", "on")
+        self.poller_state = PollerState(polling_enabled, poll_interval)
+        setup_commands(
+            self.tree,
+            self.db,
+            self.config,
+            self.fr24,
+            self.reference_data,
+            self.poller_state,
+        )
         await run_startup_checks(self, self.db, self.config)
-        self.loop.create_task(poll_loop(self, self.db, self.fr24, self.config))
+        self.loop.create_task(poll_loop(self, self.db, self.fr24, self.config, self.poller_state))
         self.loop.create_task(cleanup_loop(self.db, self.config))
         await self.tree.sync()
 

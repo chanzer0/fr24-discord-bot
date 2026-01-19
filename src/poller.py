@@ -12,10 +12,11 @@ import discord
 from .notify import build_embed, build_fr24_link, build_view
 
 
-async def poll_loop(bot, db, fr24, config) -> None:
+async def poll_loop(bot, db, fr24, config, poller_state) -> None:
     log = logging.getLogger(__name__)
     log.info("Poll loop started")
     while True:
+        await poller_state.wait_until_enabled()
         try:
             await poll_once(bot, db, fr24, config)
         except Exception as exc:
@@ -31,8 +32,8 @@ async def poll_loop(bot, db, fr24, config) -> None:
                 )
             except Exception:
                 log.exception("Failed to send poller error notification")
-        sleep_for = config.poll_interval_seconds + random.uniform(0, config.poll_jitter_seconds)
-        await asyncio.sleep(sleep_for)
+        sleep_for = poller_state.interval_seconds + random.uniform(0, config.poll_jitter_seconds)
+        await poller_state.sleep(sleep_for)
 
 
 async def poll_once(bot, db, fr24, config) -> None:
@@ -65,6 +66,12 @@ async def poll_once(bot, db, fr24, config) -> None:
 
         flights = result.flights
         credits = result.credits
+        if credits and (credits.remaining is not None or credits.consumed is not None):
+            await db.set_fr24_credits(
+                remaining=credits.remaining,
+                consumed=credits.consumed,
+                updated_at=datetime.now(timezone.utc).isoformat(),
+            )
 
         log.debug("FR24 response for %s %s: %s flights", sub_type, code, len(flights))
         if flights:
