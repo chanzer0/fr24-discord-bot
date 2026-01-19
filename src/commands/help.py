@@ -6,19 +6,16 @@ def register(tree, db, config) -> None:
     async def help_command(interaction: discord.Interaction) -> None:
         message = (
             "Commands:\n"
-            "- /set-notify-channel <channel> (owner-only)\n"
             "- /subscribe <aircraft|airport> <code>\n"
             "- /unsubscribe <aircraft|airport> <code>\n"
             "- /my-subs\n"
-            "- /refresh-reference <airports|models|all> (owner-only)\n"
-            "- /credits-remaining\n\n"
-            "- /start (owner-only)\n"
-            "- /stop (owner-only)\n"
-            "- /set-polling-interval <seconds> (owner-only)\n\n"
-            "Notes:\n"
-            "- Aircraft codes are ICAO type designators like A388 or C172.\n"
-            "- Airport codes are ICAO codes like WAW.\n"
-            "- Notifications post to the guild's default channel.\n"
-            "- Polling interval and retention are configurable via env vars."
+            "- /credits-remaining\n"
+            "- /help\n\n"
+            "Owner-only commands:\n"
+            "- /set-notify-channel <channel>\n"
+            "- /refresh-reference <airports|models|all>\n"
+            "- /start\n"
+            "- /stop\n"
+            "- /set-polling-interval <seconds>"
         )
         await interaction.response.send_message(message, ephemeral=True)
