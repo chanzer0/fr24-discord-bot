@@ -90,22 +90,13 @@ def build_embed(
 
     if flight_number:
         embed.add_field(name="Flight #", value=flight_number, inline=True)
-    if callsign and callsign != flight_number:
-        embed.add_field(name="Callsign", value=callsign, inline=True)
 
     registration = _pick_first(flight, ["registration", "reg"])
     if registration:
         embed.add_field(name="Registration", value=registration, inline=True)
 
-    painted_as = _pick_first(flight, ["painted_as"])
-    if painted_as:
-        embed.add_field(name="Painted As", value=painted_as, inline=True)
-
-    aircraft = _pick_first(
-        flight, ["type", "aircraft", "aircraft_type", "aircraft_code", "model"]
-    )
-    if aircraft:
-        embed.add_field(name="Aircraft", value=aircraft, inline=True)
+    if callsign:
+        embed.add_field(name="Callsign", value=callsign, inline=True)
 
     route = _format_route(flight)
     if route:
