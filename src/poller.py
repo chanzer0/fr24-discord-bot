@@ -435,6 +435,33 @@ def _has_registration(flight: dict) -> bool:
     return False
 
 
+def _parse_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _get_first_numeric(flight: dict, keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        value = _parse_float(flight.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _is_airport_alert_eligible(flight: dict) -> bool:
+    altitude = _get_first_numeric(flight, ("altitude", "altitude_ft", "alt"))
+    if altitude is not None and altitude <= 0:
+        return False
+    speed = _get_first_numeric(flight, ("ground_speed", "speed", "speed_kts", "gspeed"))
+    if speed is not None and speed <= 0:
+        return False
+    return True
+
+
 async def _process_flights(
     bot,
     db,
@@ -457,6 +484,8 @@ async def _process_flights(
         if not flight:
             continue
         if sub_type == "aircraft" and not _has_registration(flight):
+            continue
+        if sub_type == "airport" and not _is_airport_alert_eligible(flight):
             continue
         flight_id = _build_flight_id(flight)
         if not flight_id:
