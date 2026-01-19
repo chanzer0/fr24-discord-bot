@@ -52,7 +52,16 @@ class FlightBot(discord.Client):
             self.poller_state,
         )
         await run_startup_checks(self, self.db, self.config)
-        self.loop.create_task(poll_loop(self, self.db, self.fr24, self.config, self.poller_state))
+        self.loop.create_task(
+            poll_loop(
+                self,
+                self.db,
+                self.fr24,
+                self.config,
+                self.poller_state,
+                self.reference_data,
+            )
+        )
         self.loop.create_task(cleanup_loop(self.db, self.config))
         await self.tree.sync()
 

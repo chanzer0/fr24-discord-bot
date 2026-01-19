@@ -40,7 +40,10 @@ def register(tree, db, config, reference_data) -> None:
                 if model:
                     label = format_model_label(model)
             else:
-                airport = await reference_data.get_airport(code)
+                if len(code) == 3:
+                    airport = await reference_data.get_airport_by_iata(code)
+                else:
+                    airport = await reference_data.get_airport(code)
                 if airport:
                     label = format_airport_label(airport)
             choices.append(app_commands.Choice(name=label, value=code))
@@ -49,7 +52,7 @@ def register(tree, db, config, reference_data) -> None:
         return choices
 
     @tree.command(name="unsubscribe", description="Unsubscribe from aircraft or inbound airport alerts.")
-    @app_commands.describe(subscription_type="Subscription type", code="ICAO code")
+    @app_commands.describe(subscription_type="Subscription type", code="Code")
     @app_commands.choices(
         subscription_type=[
             app_commands.Choice(name="aircraft", value="aircraft"),
@@ -74,20 +77,40 @@ def register(tree, db, config, reference_data) -> None:
             )
             return
 
-        removed = await db.remove_subscription(
-            guild_id=str(interaction.guild_id),
-            user_id=str(interaction.user.id),
-            sub_type=subscription_type.value,
-            code=normalized,
-        )
+        codes_to_try = [normalized]
+        display_code = normalized
+        if subscription_type.value == "airport":
+            ref = None
+            if len(normalized) == 3:
+                ref = await reference_data.get_airport_by_iata(normalized)
+            elif len(normalized) == 4:
+                ref = await reference_data.get_airport(normalized)
+            if ref:
+                display_code = ref.iata or ref.icao or normalized
+                preferred = display_code
+                alternate = ref.icao if ref.icao and ref.icao != preferred else None
+                codes_to_try = [preferred]
+                if alternate and alternate not in codes_to_try:
+                    codes_to_try.append(alternate)
+
+        removed = False
+        for candidate in codes_to_try:
+            removed = await db.remove_subscription(
+                guild_id=str(interaction.guild_id),
+                user_id=str(interaction.user.id),
+                sub_type=subscription_type.value,
+                code=candidate,
+            )
+            if removed:
+                break
 
         if removed:
             await interaction.response.send_message(
-                f"Unsubscribed from {subscription_type.value} {normalized}.",
+                f"Unsubscribed from {subscription_type.value} {display_code}.",
                 ephemeral=True,
             )
         else:
             await interaction.response.send_message(
-                f"No subscription found for {subscription_type.value} {normalized}.",
+                f"No subscription found for {subscription_type.value} {display_code}.",
                 ephemeral=True,
             )

@@ -4,7 +4,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 
 ## Features
 - Subscribe/unsubscribe to aircraft ICAO type codes (e.g., A388, C172)
-- Subscribe/unsubscribe to inbound airport codes (IATA or ICAO, e.g., WAW or EPWA)
+- Subscribe/unsubscribe to inbound airport codes (IATA preferred, e.g., WAW or EPWA)
 - Owner-only default notification channel per guild via /set-notify-channel
 - Skycards-powered autocomplete for airports/models with owner refresh
 - Background polling with dedupe and backoff-friendly pacing

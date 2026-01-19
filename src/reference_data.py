@@ -84,9 +84,7 @@ def _build_model_ref(row: dict) -> ModelRef | None:
 
 
 def format_airport_label(ref: AirportRef) -> str:
-    code = ref.icao
-    if ref.iata:
-        code = f"{code}/{ref.iata}"
+    code = ref.iata or ref.icao
     details_parts = [part for part in (ref.name, ref.city, ref.place_code) if part]
     details = ", ".join(details_parts)
     label = f"{code} - {details}" if details else code

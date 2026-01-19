@@ -174,7 +174,10 @@ def register(tree, db, config, reference_data) -> None:
             if sub_type == "aircraft":
                 ref = await reference_data.get_model(code)
             else:
-                ref = await reference_data.get_airport(code)
+                if len(code) == 3:
+                    ref = await reference_data.get_airport_by_iata(code)
+                else:
+                    ref = await reference_data.get_airport(code)
             label = _build_label(row, ref)
             subs.append(
                 {

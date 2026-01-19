@@ -14,7 +14,29 @@ import discord
 from .notify import build_embed, build_fr24_link, build_view
 
 
-async def poll_loop(bot, db, fr24, config, poller_state) -> None:
+async def _resolve_airport_codes(
+    code: str, reference_data
+) -> tuple[str, str] | None:
+    value = code.strip().upper()
+    if not value:
+        return None
+    if len(value) == 3:
+        ref = await reference_data.get_airport_by_iata(value)
+        if ref:
+            preferred = ref.iata or ref.icao or value
+            return preferred, preferred
+        return (value, value) if value.isalpha() else None
+    if len(value) == 4:
+        ref = await reference_data.get_airport(value)
+        if ref:
+            preferred = ref.iata or ref.icao or value
+            return preferred, preferred
+        return (value, value) if value.isalpha() else None
+    if len(value) == 2 and value.isalpha():
+        return value, value
+    return None
+
+async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None:
     log = logging.getLogger(__name__)
     log.info("Poll loop started")
     while True:
@@ -22,7 +44,7 @@ async def poll_loop(bot, db, fr24, config, poller_state) -> None:
         cycle_started = time.monotonic()
         metrics: dict | None = None
         try:
-            metrics = await poll_once(bot, db, fr24, config)
+            metrics = await poll_once(bot, db, fr24, config, reference_data)
         except Exception as exc:
             log.exception("Poll loop failed")
             try:
@@ -50,7 +72,7 @@ async def poll_loop(bot, db, fr24, config, poller_state) -> None:
         await poller_state.sleep(sleep_for)
 
 
-async def poll_once(bot, db, fr24, config) -> dict | None:
+async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
     log = logging.getLogger(__name__)
     subs = await db.fetch_subscriptions()
     if not subs:
@@ -58,9 +80,27 @@ async def poll_once(bot, db, fr24, config) -> dict | None:
         return
 
     channel_map = await db.fetch_guild_channels()
-    grouped: dict[tuple[str, str], list[dict]] = {}
+    grouped: dict[tuple[str, str, str], list[dict]] = {}
+    airport_cache: dict[str, tuple[str, str] | None] = {}
     for sub in subs:
-        key = (sub["type"], sub["code"])
+        sub_type = sub["type"]
+        code = sub["code"]
+        if sub_type == "airport":
+            if code not in airport_cache:
+                airport_cache[code] = await _resolve_airport_codes(
+                    code, reference_data
+                )
+            resolved = airport_cache[code]
+            if not resolved:
+                log.warning(
+                    "Skipping airport code %s (invalid format for FR24).",
+                    code,
+                )
+                continue
+            request_code, display_code = resolved
+            key = (sub_type, request_code, display_code)
+        else:
+            key = (sub_type, code, code)
         grouped.setdefault(key, []).append(sub)
 
     unique_count = len(grouped)
@@ -79,12 +119,17 @@ async def poll_once(bot, db, fr24, config) -> dict | None:
     )
 
     rate_limit_notified = False
-    for (sub_type, code), entries in grouped.items():
-        log.debug("Polling FR24 for %s %s (%s subs)", sub_type, code, len(entries))
+    for (sub_type, request_code, display_code), entries in grouped.items():
+        log.debug(
+            "Polling FR24 for %s %s (%s subs)",
+            sub_type,
+            request_code,
+            len(entries),
+        )
         if sub_type == "aircraft":
-            result = await fr24.fetch_by_aircraft(code)
+            result = await fr24.fetch_by_aircraft(request_code)
         else:
-            result = await fr24.fetch_by_airport_inbound(code)
+            result = await fr24.fetch_by_airport_inbound(request_code)
         if result.error:
             if result.rate_limited:
                 if not rate_limit_notified:
@@ -93,7 +138,7 @@ async def poll_once(bot, db, fr24, config) -> dict | None:
                         channel_map,
                         config.bot_owner_ids,
                         {sub["guild_id"] for sub in entries},
-                        f"FR24 rate limit hit for {sub_type} {code}. Backing off for 60s.",
+                        f"FR24 rate limit hit for {sub_type} {request_code}. Backing off for 60s.",
                     )
                     rate_limit_notified = True
                 continue
@@ -103,7 +148,7 @@ async def poll_once(bot, db, fr24, config) -> dict | None:
                     channel_map,
                     config.bot_owner_ids,
                     {sub["guild_id"] for sub in entries},
-                    f"FR24 request failed for {sub_type} {code}: {result.error}",
+                    f"FR24 request failed for {sub_type} {request_code}: {result.error}",
                 )
             continue
 
@@ -121,7 +166,7 @@ async def poll_once(bot, db, fr24, config) -> dict | None:
             log.info(
                 "FR24 sample flight data for %s %s: %s",
                 sub_type,
-                code,
+                request_code,
                 json.dumps(flights[0], sort_keys=True, default=str),
             )
         await _process_flights(
@@ -132,7 +177,7 @@ async def poll_once(bot, db, fr24, config) -> dict | None:
             subscriptions=entries,
             flights=flights,
             sub_type=sub_type,
-            code=code,
+            display_code=display_code,
             credits=credits,
         )
 
@@ -187,7 +232,7 @@ async def _process_flights(
     subscriptions: list[dict],
     flights: list[dict],
     sub_type: str,
-    code: str,
+    display_code: str,
     credits,
 ) -> None:
     if not flights:
@@ -222,7 +267,7 @@ async def _process_flights(
                 user_ids=user_ids,
                 flight=flight,
                 sub_type=sub_type,
-                code=code,
+                display_code=display_code,
                 credits=credits,
             )
             if sent:
@@ -273,7 +318,7 @@ async def _send_notification(
     user_ids: list[str],
     flight: dict,
     sub_type: str,
-    code: str,
+    display_code: str,
     credits,
 ) -> bool:
     log = logging.getLogger(__name__)
@@ -288,7 +333,7 @@ async def _send_notification(
     embed = build_embed(
         flight,
         sub_type,
-        code,
+        display_code,
         credits_consumed=getattr(credits, "consumed", None),
         credits_remaining=getattr(credits, "remaining", None),
     )
@@ -296,7 +341,7 @@ async def _send_notification(
     view = build_view(url)
 
     try:
-        content = _build_notification_content(user_ids, code)
+        content = _build_notification_content(user_ids, display_code)
         await channel.send(content=content, embed=embed, view=view)
     except (discord.Forbidden, discord.HTTPException) as exc:
         log.warning("Failed to send notification to channel %s: %s", channel_id, exc)
@@ -309,14 +354,16 @@ async def _send_notification(
 async def _notify_poll_error(
     bot,
     channel_map: dict[str, str],
-    owner_ids: set[int],
+    owner_ids: list[int],
     guild_ids: set[str],
     message: str,
 ) -> None:
     log = logging.getLogger(__name__)
     if not guild_ids:
         return
-    mentions = " ".join(f"<@{owner_id}>" for owner_id in sorted(owner_ids))
+    if not owner_ids:
+        return
+    mentions = f"<@{owner_ids[0]}>"
     text = message.strip()
     if len(text) > 900:
         text = text[:897] + "..."

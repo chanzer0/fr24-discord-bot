@@ -14,7 +14,7 @@ Examples:
 - /subscribe airport WAW
 
 Notes:
-- Autocomplete matches airport ICAO/IATA codes from the Skycards reference datasets.
+- Autocomplete matches airport IATA/ICAO codes from the Skycards reference datasets (IATA preferred).
 - Manual airport or aircraft code input is allowed; the bot warns if it is not found in the reference data.
 - Notifications for the same code in a guild are combined into one message tagging all subscribers (mentions truncated if needed).
 

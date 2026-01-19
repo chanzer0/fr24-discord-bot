@@ -56,14 +56,15 @@ def register(tree, db, config, reference_data) -> None:
             airports = await reference_data.search_airports(current)
             return [
                 app_commands.Choice(
-                    name=format_airport_label(airport), value=airport.icao
+                    name=format_airport_label(airport),
+                    value=airport.iata or airport.icao,
                 )
                 for airport in airports
             ]
         return []
 
     @tree.command(name="subscribe", description="Subscribe to aircraft or inbound airport alerts.")
-    @app_commands.describe(subscription_type="Subscription type", code="ICAO code")
+    @app_commands.describe(subscription_type="Subscription type", code="Code")
     @app_commands.choices(
         subscription_type=[
             app_commands.Choice(name="aircraft", value="aircraft"),
@@ -95,6 +96,19 @@ def register(tree, db, config, reference_data) -> None:
                 ephemeral=True,
             )
             return
+        display_code = normalized
+        ref_found = False
+        if subscription_type.value == "airport":
+            if len(normalized) == 3:
+                ref = await reference_data.get_airport_by_iata(normalized)
+            elif len(normalized) == 4:
+                ref = await reference_data.get_airport(normalized)
+            else:
+                ref = None
+            if ref:
+                ref_found = True
+                display_code = ref.iata or ref.icao or normalized
+                normalized = display_code
 
         guild_name = await _resolve_guild_name(interaction)
         user_name = _clean_name(
@@ -126,22 +140,18 @@ def register(tree, db, config, reference_data) -> None:
                     "Warning: that aircraft ICAO is not in the Skycards reference data."
                 )
         else:
-            if len(normalized) == 3:
-                found = await reference_data.get_airport_by_iata(normalized)
-            else:
-                found = await reference_data.get_airport(normalized)
-            if not found and await reference_data.has_airports():
+            if not ref_found and await reference_data.has_airports():
                 warning = (
                     "Warning: that airport code is not in the Skycards reference data."
                 )
 
         if inserted:
-            message = f"Subscribed to {subscription_type.value} {normalized}."
+            message = f"Subscribed to {subscription_type.value} {display_code}."
             if warning:
                 message = f"{message}\n{warning}"
             await interaction.response.send_message(message, ephemeral=True)
         else:
             await interaction.response.send_message(
-                f"You are already subscribed to {subscription_type.value} {normalized}.",
+                f"You are already subscribed to {subscription_type.value} {display_code}.",
                 ephemeral=True,
             )

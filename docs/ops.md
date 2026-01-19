@@ -56,6 +56,19 @@ Deletes notification log entries older than N days.
 python -m src.admin clear-notifications --older-than-days 7
 ```
 
+### remove-subs
+Delete subscriptions by ID (with confirmation).
+
+```bash
+python -m src.admin remove-subs 12 15 18
+```
+
+Skip the prompt:
+
+```bash
+python -m src.admin remove-subs 12 15 --yes
+```
+
 ### export-subs
 Exports subscriptions as CSV to stdout.
 

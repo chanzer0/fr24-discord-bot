@@ -29,20 +29,30 @@ def _float_env(name: str, default: float) -> float:
         raise ValueError(f"{name} must be a number") from exc
 
 
-def _parse_owner_ids() -> set[int]:
+def _parse_owner_ids() -> list[int]:
     raw = os.getenv("BOT_OWNER_IDS")
     if raw:
         parts = [item.strip() for item in raw.split(",") if item.strip()]
         if not parts:
             raise ValueError("BOT_OWNER_IDS must contain at least one ID")
-        try:
-            return {int(item) for item in parts}
-        except ValueError as exc:
-            raise ValueError("BOT_OWNER_IDS must be a CSV of integers") from exc
+        owner_ids: list[int] = []
+        seen: set[int] = set()
+        for item in parts:
+            try:
+                value = int(item)
+            except ValueError as exc:
+                raise ValueError("BOT_OWNER_IDS must be a CSV of integers") from exc
+            if value in seen:
+                continue
+            seen.add(value)
+            owner_ids.append(value)
+        if not owner_ids:
+            raise ValueError("BOT_OWNER_IDS must contain at least one ID")
+        return owner_ids
     legacy = os.getenv("BOT_OWNER_ID")
     if legacy:
         try:
-            return {int(legacy.strip())}
+            return [int(legacy.strip())]
         except ValueError as exc:
             raise ValueError("BOT_OWNER_ID must be an integer") from exc
     raise ValueError("Missing required env var: BOT_OWNER_IDS")
@@ -52,7 +62,7 @@ def _parse_owner_ids() -> set[int]:
 class Config:
     discord_token: str
     fr24_api_key: str
-    bot_owner_ids: set[int]
+    bot_owner_ids: list[int]
     poll_interval_seconds: int
     poll_jitter_seconds: int
     fr24_request_delay_seconds: float

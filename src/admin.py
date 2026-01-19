@@ -319,6 +319,46 @@ def cmd_clear_notifications(conn: sqlite3.Connection, args: argparse.Namespace) 
     print(f"Deleted {cur.rowcount} notification_log rows older than {args.older_than_days} days.")
 
 
+def cmd_remove_subs(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
+    ids = sorted(set(args.ids))
+    if not ids:
+        print("No subscription IDs provided.")
+        return
+    placeholders = ",".join("?" for _ in ids)
+    cur = conn.execute(
+        f"SELECT id, guild_id, user_id, type, code FROM subscriptions WHERE id IN ({placeholders})",
+        ids,
+    )
+    rows = cur.fetchall()
+    if not rows:
+        print("No matching subscriptions found.")
+        return
+    print("Deleting subscriptions:")
+    _print_rows(rows, ["id", "guild_id", "user_id", "type", "code"])
+    if args.yes:
+        to_delete = [row["id"] for row in rows]
+        placeholders = ",".join("?" for _ in to_delete)
+        cur = conn.execute(
+            f"DELETE FROM subscriptions WHERE id IN ({placeholders})",
+            to_delete,
+        )
+        conn.commit()
+        print(f"Deleted {cur.rowcount} subscriptions.")
+        return
+    confirm = input("Type DELETE to confirm: ").strip()
+    if confirm != "DELETE":
+        print("Aborted.")
+        return
+    to_delete = [row["id"] for row in rows]
+    placeholders = ",".join("?" for _ in to_delete)
+    cur = conn.execute(
+        f"DELETE FROM subscriptions WHERE id IN ({placeholders})",
+        to_delete,
+    )
+    conn.commit()
+    print(f"Deleted {cur.rowcount} subscriptions.")
+
+
 def cmd_export_subs(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
     _ensure_core_columns(conn)
     query = '''
@@ -378,6 +418,14 @@ def build_parser() -> argparse.ArgumentParser:
     clear = sub.add_parser("clear-notifications", help="Delete old notification logs")
     clear.add_argument("--older-than-days", type=int, default=7)
 
+    remove_subs = sub.add_parser("remove-subs", help="Remove subscriptions by ID")
+    remove_subs.add_argument("ids", nargs="+", type=int, help="Subscription IDs to delete")
+    remove_subs.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip confirmation prompt",
+    )
+
     sub.add_parser("export-subs", help="Export subscriptions as CSV")
     sub.add_parser("reference-status", help="Show reference dataset status")
 
@@ -403,6 +451,8 @@ def main() -> None:
             cmd_recent(conn, args)
         elif args.command == "clear-notifications":
             cmd_clear_notifications(conn, args)
+        elif args.command == "remove-subs":
+            cmd_remove_subs(conn, args)
         elif args.command == "export-subs":
             cmd_export_subs(conn, args)
         elif args.command == "reference-status":
