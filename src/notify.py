@@ -26,8 +26,26 @@ def build_fr24_link(flight: dict, base_url: str) -> str:
 
 
 def _format_route(flight: dict) -> str | None:
-    origin = _pick_first(flight, ["origin", "origin_icao", "origin_iata"])
-    destination = _pick_first(flight, ["destination", "destination_icao", "destination_iata"])
+    origin = _pick_first(
+        flight,
+        [
+            "orig_iata",
+            "origin_iata",
+            "origin",
+            "orig_icao",
+            "origin_icao",
+        ],
+    )
+    destination = _pick_first(
+        flight,
+        [
+            "dest_iata",
+            "destination_iata",
+            "destination",
+            "dest_icao",
+            "destination_icao",
+        ],
+    )
     if origin and destination:
         return f"{origin} -> {destination}"
     if destination:
@@ -35,6 +53,18 @@ def _format_route(flight: dict) -> str | None:
     if origin:
         return origin
     return None
+
+
+def _format_eta(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def build_embed(
@@ -45,8 +75,11 @@ def build_embed(
     credits_remaining: int | None = None,
 ) -> discord.Embed:
     title = f"Aircraft match: {code}" if sub_type == "aircraft" else f"Inbound to {code}"
-    callsign = _pick_first(flight, ["callsign", "flight_number", "flight"])
-    description = callsign or "Flight update"
+    flight_number = _pick_first(
+        flight, ["flight", "flight_number", "flight_number_iata", "flight_number_icao"]
+    )
+    callsign = _pick_first(flight, ["callsign"])
+    description = flight_number or callsign or "Flight update"
 
     embed = discord.Embed(
         title=title,
@@ -55,17 +88,32 @@ def build_embed(
         timestamp=datetime.now(timezone.utc),
     )
 
-    route = _format_route(flight)
-    if route:
-        embed.add_field(name="Route", value=route, inline=False)
-
-    aircraft = _pick_first(flight, ["aircraft", "aircraft_type", "aircraft_code", "model"])
-    if aircraft:
-        embed.add_field(name="Aircraft", value=aircraft, inline=True)
+    if flight_number:
+        embed.add_field(name="Flight #", value=flight_number, inline=True)
+    if callsign and callsign != flight_number:
+        embed.add_field(name="Callsign", value=callsign, inline=True)
 
     registration = _pick_first(flight, ["registration", "reg"])
     if registration:
         embed.add_field(name="Registration", value=registration, inline=True)
+
+    painted_as = _pick_first(flight, ["painted_as"])
+    if painted_as:
+        embed.add_field(name="Painted As", value=painted_as, inline=True)
+
+    aircraft = _pick_first(
+        flight, ["type", "aircraft", "aircraft_type", "aircraft_code", "model"]
+    )
+    if aircraft:
+        embed.add_field(name="Aircraft", value=aircraft, inline=True)
+
+    route = _format_route(flight)
+    if route:
+        embed.add_field(name="Route", value=route, inline=False)
+
+    eta = _format_eta(_pick_first(flight, ["eta", "estimated_arrival", "eta_utc"]))
+    if eta:
+        embed.add_field(name="ETA", value=eta, inline=True)
 
     altitude = _pick_first(flight, ["altitude", "altitude_ft", "alt"])
     speed = _pick_first(flight, ["speed", "ground_speed", "speed_kts"])
@@ -77,11 +125,6 @@ def build_embed(
         embed.add_field(name="Speed", value=str(speed), inline=True)
     if heading:
         embed.add_field(name="Heading", value=str(heading), inline=True)
-
-    lat = _pick_first(flight, ["lat", "latitude"])
-    lon = _pick_first(flight, ["lon", "lng", "longitude"])
-    if lat and lon:
-        embed.add_field(name="Position", value=f"{lat}, {lon}", inline=False)
 
     footer_parts = ["Data source: Flightradar24"]
     credit_parts = []
