@@ -4,12 +4,65 @@ import discord
 from discord import app_commands
 
 
+class TextChannelTransformer(app_commands.Transformer):
+    type = discord.AppCommandOptionType.channel
+
+    async def transform(
+        self, interaction: discord.Interaction, value: object
+    ) -> discord.TextChannel:
+        if isinstance(value, discord.TextChannel):
+            return value
+
+        channel_id = None
+        if isinstance(value, int):
+            channel_id = value
+        elif isinstance(value, str) and value.isdigit():
+            channel_id = int(value)
+        elif isinstance(value, dict):
+            raw_id = value.get("id") or value.get("value")
+            if raw_id and str(raw_id).isdigit():
+                channel_id = int(raw_id)
+
+        data = getattr(interaction, "data", {})
+        if channel_id is None and isinstance(data, dict):
+            for opt in data.get("options", []):
+                if opt.get("name") == "channel":
+                    raw_value = opt.get("value")
+                    if raw_value and str(raw_value).isdigit():
+                        channel_id = int(raw_value)
+                    break
+
+        if channel_id is not None:
+            resolved = data.get("resolved") if isinstance(data, dict) else None
+            if isinstance(resolved, dict):
+                channels = resolved.get("channels", {})
+                channel_data = channels.get(str(channel_id))
+                if channel_data and channel_data.get("type") == 0:
+                    channel = interaction.guild.get_channel(channel_id) if interaction.guild else None
+                    if channel and isinstance(channel, discord.TextChannel):
+                        return channel
+
+            channel = interaction.guild.get_channel(channel_id) if interaction.guild else None
+            if channel is None:
+                try:
+                    channel = await interaction.client.fetch_channel(channel_id)
+                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                    channel = None
+            if isinstance(channel, discord.TextChannel):
+                return channel
+
+        raise app_commands.TransformerError(value, self.type, self)
+
+
 def register(tree, db, config) -> None:
     log = logging.getLogger(__name__)
 
     @tree.command(name="set-notify-channel", description="Set the default notification channel for this guild.")
     @app_commands.describe(channel="Channel to use for notifications")
-    async def set_notify_channel(interaction: discord.Interaction, channel: discord.TextChannel) -> None:
+    async def set_notify_channel(
+        interaction: discord.Interaction,
+        channel: app_commands.Transform[discord.TextChannel, TextChannelTransformer],
+    ) -> None:
         if interaction.guild_id is None:
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
             return
