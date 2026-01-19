@@ -9,6 +9,7 @@ def register(tree, db, config) -> None:
             "- /set-notify-channel <channel> (owner-only)\n"
             "- /subscribe <aircraft|airport> <code>\n"
             "- /unsubscribe <aircraft|airport> <code>\n"
+            "- /my-subs\n"
             "- /refresh-reference <airports|models|all> (owner-only)\n"
             "- /credits-remaining\n\n"
             "- /start (owner-only)\n"

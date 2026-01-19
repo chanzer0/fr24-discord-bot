@@ -437,6 +437,21 @@ class Database:
             rows = await cur.fetchall()
         return [row["code"] for row in rows]
 
+    async def fetch_user_subscriptions(self, guild_id: str, user_id: str) -> list[dict]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            '''
+            SELECT id, type, code, created_at
+            FROM subscriptions
+            WHERE guild_id = ? AND user_id = ?
+            ORDER BY type, code
+            ''',
+            (guild_id, user_id),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(row) for row in rows]
+
     async def fetch_reference_airports(self) -> list[dict]:
         if not self._conn:
             raise RuntimeError("Database not connected")

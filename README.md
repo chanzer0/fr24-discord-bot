@@ -15,6 +15,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 - /set-notify-channel <channel> (owner-only)
 - /subscribe <aircraft|airport> <code>
 - /unsubscribe <aircraft|airport> <code>
+- /my-subs
 - /refresh-reference <airports|models|all> (owner-only)
 - /credits-remaining
 - /start (owner-only)

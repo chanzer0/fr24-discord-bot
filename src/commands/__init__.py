@@ -1,5 +1,6 @@
 from .help import register as register_help
 from .credits_remaining import register as register_credits_remaining
+from .my_subs import register as register_my_subs
 from .polling import register as register_polling
 from .refresh_reference import register as register_refresh_reference
 from .set_notify_channel import register as register_set_notify_channel
@@ -13,5 +14,6 @@ def setup_commands(tree, db, config, fr24, reference_data, poller_state) -> None
     register_unsubscribe(tree, db, config, reference_data)
     register_refresh_reference(tree, db, config, reference_data)
     register_credits_remaining(tree, db, config)
+    register_my_subs(tree, db, config, reference_data)
     register_polling(tree, db, config, poller_state)
     register_help(tree, db, config)

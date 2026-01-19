@@ -27,6 +27,9 @@ Examples:
 Notes:
 - Autocomplete only shows your own saved subscriptions.
 
+## /my-subs
+Show your current subscriptions and remove them from an ephemeral list.
+
 ## /refresh-reference
 Owner-only command to refresh airport/model reference data used for autocomplete.
 
