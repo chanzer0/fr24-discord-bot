@@ -1,3 +1,5 @@
+import logging
+
 import discord
 from discord import app_commands
 
@@ -16,6 +18,8 @@ def _resolve_subscription_type(interaction: discord.Interaction) -> str | None:
 
 
 def register(tree, db, config, reference_data) -> None:
+    log = logging.getLogger(__name__)
+
     async def code_autocomplete(
         interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
@@ -70,13 +74,25 @@ def register(tree, db, config, reference_data) -> None:
             )
             return
 
+        guild = interaction.guild or interaction.client.get_guild(interaction.guild_id)
+        guild_name = guild.name if guild else None
+        user_name = getattr(interaction.user, "display_name", None) or interaction.user.name
+        log.info(
+            "subscribe request guild_id=%s guild_name=%s user_id=%s user_name=%s type=%s code=%s",
+            interaction.guild_id,
+            guild_name,
+            interaction.user.id,
+            user_name,
+            subscription_type.value,
+            normalized,
+        )
         inserted = await db.add_subscription(
             guild_id=str(interaction.guild_id),
             user_id=str(interaction.user.id),
             sub_type=subscription_type.value,
             code=normalized,
-            guild_name=interaction.guild.name if interaction.guild else None,
-            user_name=getattr(interaction.user, "display_name", None) or interaction.user.name,
+            guild_name=guild_name,
+            user_name=user_name,
         )
 
         warning = None

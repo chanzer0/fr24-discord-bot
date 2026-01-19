@@ -59,7 +59,7 @@ class Fr24Client:
         self._log = logging.getLogger(__name__)
 
     async def fetch_by_aircraft(self, code: str) -> list[dict]:
-        return await self._call({"operating_as": [code]})
+        return await self._call({"aircraft": code})
 
     async def fetch_by_airport_inbound(self, code: str) -> list[dict]:
         return await self._call({"airports": [f"inbound:{code}"]})
@@ -82,8 +82,9 @@ class Fr24Client:
                 return client.live.flight_positions.get_full(**params)
 
         try:
+            self._log.debug("FR24 request params=%s", params)
             result = await asyncio.to_thread(_sync_call)
         except Exception:
-            self._log.exception("FR24 request failed", extra={"params": params})
+            self._log.exception("FR24 request failed params=%s", params)
             return []
         return _normalize_positions(result)

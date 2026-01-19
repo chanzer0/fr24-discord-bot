@@ -191,11 +191,11 @@ class Database:
             )
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(guild_id)
-            DO UPDATE SET guild_name = excluded.guild_name,
+            DO UPDATE SET guild_name = COALESCE(excluded.guild_name, guild_settings.guild_name),
                           notify_channel_id = excluded.notify_channel_id,
-                          notify_channel_name = excluded.notify_channel_name,
+                          notify_channel_name = COALESCE(excluded.notify_channel_name, guild_settings.notify_channel_name),
                           updated_by = excluded.updated_by,
-                          updated_by_name = excluded.updated_by_name,
+                          updated_by_name = COALESCE(excluded.updated_by_name, guild_settings.updated_by_name),
                           updated_at = excluded.updated_at
             ''',
             (

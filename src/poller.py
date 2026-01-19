@@ -37,11 +37,15 @@ async def poll_once(bot, db, fr24, config) -> None:
         grouped.setdefault(key, []).append(sub)
 
     for (sub_type, code), entries in grouped.items():
+        log.debug("Polling FR24 for %s %s (%s subs)", sub_type, code, len(entries))
         if sub_type == "aircraft":
             flights = await fr24.fetch_by_aircraft(code)
         else:
             flights = await fr24.fetch_by_airport_inbound(code)
 
+        log.debug(
+            "FR24 response for %s %s: %s flights", sub_type, code, len(flights)
+        )
         await _process_flights(
             bot=bot,
             db=db,

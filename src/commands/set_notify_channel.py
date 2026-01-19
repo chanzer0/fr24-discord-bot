@@ -155,8 +155,18 @@ def register(tree, db, config) -> None:
             )
             return
 
-        guild_name = interaction.guild.name if interaction.guild else None
+        guild = interaction.guild or interaction.client.get_guild(interaction.guild_id)
+        guild_name = guild.name if guild else None
         user_name = getattr(interaction.user, "display_name", None) or interaction.user.name
+        log.info(
+            "set-notify-channel update guild_id=%s guild_name=%s channel_id=%s channel_name=%s user_id=%s user_name=%s",
+            interaction.guild_id,
+            guild_name,
+            channel.id,
+            channel.name,
+            interaction.user.id,
+            user_name,
+        )
         await db.set_guild_notify_channel(
             guild_id=str(interaction.guild_id),
             channel_id=str(channel.id),
