@@ -11,7 +11,6 @@ def register(tree, db, config) -> None:
             "- /unsubscribe <aircraft|airport> <code>\n"
             "- /usage\n\n"
             "Notes:\n"
-            "- Set-notify-channel accepts #channel, channel ID, or exact channel name.\n"
             "- Aircraft codes are ICAO type designators like A388 or C172.\n"
             "- Airport codes are ICAO codes like WAW.\n"
             "- Notifications post to the guild's default channel.\n"
