@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any
 
@@ -74,7 +75,9 @@ class Fr24Client:
         except Exception:
             self._log.exception("FR24 usage request failed")
             return {}
-        return _normalize_usage(result)
+        payload = _normalize_usage(result)
+        self._log.info("FR24 usage payload=%s", json.dumps(payload, sort_keys=True, default=str))
+        return payload
 
     async def _call(self, params: dict) -> list[dict]:
         def _sync_call() -> Any:

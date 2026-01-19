@@ -5,7 +5,7 @@ import discord
 from ..usage import build_usage_embed, build_usage_payload_message
 
 
-_USAGE_REFRESH_WINDOW = timedelta(minutes=30)
+_USAGE_REFRESH_WINDOW = timedelta(minutes=5)
 
 
 def _parse_timestamp(value: str | None) -> datetime | None:

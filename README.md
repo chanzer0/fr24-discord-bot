@@ -63,7 +63,7 @@ See docs/deploy-unraid.md for details.
 
 ## Usage reporting
 - The bot fetches FR24 usage once daily at 8:00 AM Eastern and broadcasts it to all guild notify channels.
-- /usage returns cached usage details and refreshes if the cache is older than 30 minutes.
+- /usage returns cached usage details and refreshes if the cache is older than 5 minutes.
 
 ## Logs and startup checks
 - On startup, the bot logs configuration (non-sensitive), DB counts, and intent/voice status.

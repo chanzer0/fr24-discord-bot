@@ -32,7 +32,7 @@ class ChannelRefTransformer(app_commands.Transformer):
             resolved_channels = (
                 resolved.get("channels") if isinstance(resolved, dict) else None
             )
-        log.info(
+        log.debug(
             "set-notify-channel transform start value=%r type=%s guild_id=%s options=%s resolved_channel_ids=%s",
             value,
             type(value).__name__,
@@ -55,7 +55,7 @@ class ChannelRefTransformer(app_commands.Transformer):
                     permissions = discord.Permissions(int(permissions_raw))
                 except (TypeError, ValueError):
                     permissions = None
-            log.info(
+            log.debug(
                 "set-notify-channel transform: value is channel-like id=%s", channel_id
             )
             return ChannelRef(
@@ -82,7 +82,7 @@ class ChannelRefTransformer(app_commands.Transformer):
                     if raw_value and str(raw_value).isdigit():
                         channel_id = int(raw_value)
                     break
-        log.info("set-notify-channel transform: channel_id=%s", channel_id)
+        log.debug("set-notify-channel transform: channel_id=%s", channel_id)
 
         if channel_id is not None:
             resolved = data.get("resolved") if isinstance(data, dict) else None
@@ -90,7 +90,7 @@ class ChannelRefTransformer(app_commands.Transformer):
                 channels = resolved.get("channels", {})
                 channel_data = channels.get(str(channel_id))
                 if channel_data and channel_data.get("type") == 0:
-                    log.info(
+                    log.debug(
                         "set-notify-channel transform: resolved channel data name=%s type=%s",
                         channel_data.get("name"),
                         channel_data.get("type"),
@@ -181,7 +181,7 @@ def register(tree, db, config) -> None:
         user_name = _clean_name(
             getattr(interaction.user, "display_name", None) or interaction.user.name
         )
-        log.info(
+        log.debug(
             "set-notify-channel update guild_id=%s guild_name=%s channel_id=%s channel_name=%s user_id=%s user_name=%s",
             interaction.guild_id,
             guild_name,

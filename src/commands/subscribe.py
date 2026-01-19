@@ -100,7 +100,7 @@ def register(tree, db, config, reference_data) -> None:
         user_name = _clean_name(
             getattr(interaction.user, "display_name", None) or interaction.user.name
         )
-        log.info(
+        log.debug(
             "subscribe request guild_id=%s guild_name=%s user_id=%s user_name=%s type=%s code=%s",
             interaction.guild_id,
             guild_name,
