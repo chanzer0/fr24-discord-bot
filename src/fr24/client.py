@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
@@ -134,11 +135,19 @@ class Fr24Client:
 
 
 class _RateLimiter:
-    def __init__(self, max_requests_per_min: int) -> None:
-        self._min_interval = 60.0 / max(1, max_requests_per_min)
+    def __init__(
+        self,
+        max_requests_per_min: int,
+        base_spacing_padding_seconds: float = 0.5,
+    ) -> None:
+        self._max_requests = max(1, max_requests_per_min)
+        self._window_seconds = 60.0
+        base_spacing_seconds = self._window_seconds / self._max_requests
+        self._min_interval = base_spacing_seconds + base_spacing_padding_seconds
         self._lock = asyncio.Lock()
         self._next_at = 0.0
         self._cooldown_until = 0.0
+        self._recent = deque()
 
     async def wait(self) -> None:
         async with self._lock:
@@ -146,10 +155,18 @@ class _RateLimiter:
             if now < self._cooldown_until:
                 await asyncio.sleep(self._cooldown_until - now)
                 now = time.monotonic()
+            self._prune(now)
+            if len(self._recent) >= self._max_requests:
+                wait_for = (self._recent[0] + self._window_seconds) - now
+                if wait_for > 0:
+                    await asyncio.sleep(wait_for)
+                    now = time.monotonic()
+                    self._prune(now)
             if now < self._next_at:
                 await asyncio.sleep(self._next_at - now)
                 now = time.monotonic()
             self._next_at = now + self._min_interval
+            self._recent.append(now)
 
     async def cooldown(self, seconds: float) -> None:
         if seconds <= 0:
@@ -161,3 +178,8 @@ class _RateLimiter:
                 self._cooldown_until = until
             if until > self._next_at:
                 self._next_at = until + self._min_interval
+
+    def _prune(self, now: float) -> None:
+        cutoff = now - self._window_seconds
+        while self._recent and self._recent[0] <= cutoff:
+            self._recent.popleft()
