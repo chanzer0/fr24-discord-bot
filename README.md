@@ -8,12 +8,14 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 - Owner-only default notification channel per guild via /set-notify-channel
 - Background polling with dedupe and backoff-friendly pacing
 - SQLite persistence with daily cleanup of stale notification logs
+- Daily FR24 usage report broadcast and cached /usage command
 - Docker-friendly for Unraid deployments
 
 ## Commands
 - /set-notify-channel <channel> (owner-only)
 - /subscribe <aircraft|airport> <code>
 - /unsubscribe <aircraft|airport> <code>
+- /usage
 - /help
 
 ## Quickstart (local)
@@ -52,6 +54,10 @@ See docs/deploy-unraid.md for details.
 ## Data retention
 - The bot stores subscription metadata and a notification dedupe log only.
 - Notification logs are pruned daily based on NOTIFICATION_RETENTION_DAYS.
+
+## Usage reporting
+- The bot fetches FR24 usage once daily at 8:00 AM Eastern and broadcasts it to all guild notify channels.
+- /usage returns cached usage details and refreshes if the cache is older than 30 minutes.
 
 ## Logs and startup checks
 - On startup, the bot logs configuration (non-sensitive), DB counts, and intent/voice status.

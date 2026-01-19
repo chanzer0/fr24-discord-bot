@@ -20,5 +20,11 @@ Examples:
 - /unsubscribe aircraft A388
 - /unsubscribe airport WAW
 
+## /usage
+Show cached FR24 API usage statistics. If the cache is older than 30 minutes, the bot refreshes it before responding.
+
+Example:
+- /usage
+
 ## /help
 Show usage and tips.

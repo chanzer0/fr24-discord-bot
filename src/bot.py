@@ -10,6 +10,7 @@ from .db import Database
 from .fr24.client import Fr24Client
 from .health import run_startup_checks
 from .poller import cleanup_loop, poll_loop
+from .usage import usage_loop
 
 
 class FlightBot(discord.Client):
@@ -24,10 +25,11 @@ class FlightBot(discord.Client):
     async def setup_hook(self) -> None:
         await self.db.connect()
         await self.db.init()
-        setup_commands(self.tree, self.db, self.config)
+        setup_commands(self.tree, self.db, self.config, self.fr24)
         await run_startup_checks(self, self.db, self.config)
         self.loop.create_task(poll_loop(self, self.db, self.fr24, self.config))
         self.loop.create_task(cleanup_loop(self.db, self.config))
+        self.loop.create_task(usage_loop(self, self.db, self.fr24, self.config))
         await self.tree.sync()
 
     async def on_ready(self) -> None:

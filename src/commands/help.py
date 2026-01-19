@@ -8,11 +8,13 @@ def register(tree, db, config) -> None:
             "Commands:\n"
             "- /set-notify-channel <channel> (owner-only)\n"
             "- /subscribe <aircraft|airport> <code>\n"
-            "- /unsubscribe <aircraft|airport> <code>\n\n"
+            "- /unsubscribe <aircraft|airport> <code>\n"
+            "- /usage\n\n"
             "Notes:\n"
             "- Aircraft codes are ICAO type designators like A388 or C172.\n"
             "- Airport codes are ICAO codes like WAW.\n"
             "- Notifications post to the guild's default channel.\n"
+            "- Usage data is cached and refreshed daily at 8:00 AM Eastern.\n"
             "- Polling interval and retention are configurable via env vars."
         )
         await interaction.response.send_message(message, ephemeral=True)

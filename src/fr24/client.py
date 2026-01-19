@@ -42,6 +42,17 @@ def _normalize_positions(result: Any) -> list[dict]:
     return [_coerce_dict(item) for item in items if item is not None]
 
 
+def _normalize_usage(result: Any) -> dict:
+    if result is None:
+        return {}
+    data = _coerce_dict(result)
+    if data:
+        return data
+    if hasattr(result, "data"):
+        return _coerce_dict(getattr(result, "data"))
+    return {}
+
+
 class Fr24Client:
     def __init__(self, api_token: str) -> None:
         self._api_token = api_token
@@ -52,6 +63,18 @@ class Fr24Client:
 
     async def fetch_by_airport_inbound(self, code: str) -> list[dict]:
         return await self._call({"airports": f"inbound:{code}"})
+
+    async def fetch_usage(self) -> dict:
+        def _sync_call() -> Any:
+            with Client(api_token=self._api_token) as client:
+                return client.usage.get()
+
+        try:
+            result = await asyncio.to_thread(_sync_call)
+        except Exception:
+            self._log.exception("FR24 usage request failed")
+            return {}
+        return _normalize_usage(result)
 
     async def _call(self, params: dict) -> list[dict]:
         def _sync_call() -> Any:

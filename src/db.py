@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import aiosqlite
 
 from .utils import utc_now_iso
@@ -40,6 +42,12 @@ CREATE TABLE IF NOT EXISTS notification_log (
 
 CREATE INDEX IF NOT EXISTS idx_notification_log_notified_at
     ON notification_log (notified_at);
+
+CREATE TABLE IF NOT EXISTS usage_cache (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    payload TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
+);
 '''
 
 
@@ -179,6 +187,37 @@ class Database:
         await self._conn.commit()
         return await self._changes()
 
+    async def get_usage_cache(self) -> dict | None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            "SELECT payload, fetched_at FROM usage_cache WHERE id = 1"
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return None
+        try:
+            payload = json.loads(row["payload"])
+        except json.JSONDecodeError:
+            payload = {}
+        return {"payload": payload, "fetched_at": row["fetched_at"]}
+
+    async def set_usage_cache(self, payload: dict, fetched_at: str) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        payload_json = json.dumps(payload, sort_keys=True, default=str)
+        await self._conn.execute(
+            '''
+            INSERT INTO usage_cache (id, payload, fetched_at)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id)
+            DO UPDATE SET payload = excluded.payload,
+                          fetched_at = excluded.fetched_at
+            ''',
+            (payload_json, fetched_at),
+        )
+        await self._conn.commit()
+
     async def get_counts(self) -> dict[str, int]:
         if not self._conn:
             raise RuntimeError("Database not connected")
@@ -192,4 +231,5 @@ class Database:
             "guild_settings": await _count("guild_settings"),
             "subscriptions": await _count("subscriptions"),
             "notification_log": await _count("notification_log"),
+            "usage_cache": await _count("usage_cache"),
         }

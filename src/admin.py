@@ -31,7 +31,7 @@ def _print_rows(rows: list[sqlite3.Row], columns: list[str]) -> None:
 
 
 def cmd_status(conn: sqlite3.Connection) -> None:
-    tables = ("guild_settings", "subscriptions", "notification_log")
+    tables = ("guild_settings", "subscriptions", "notification_log", "usage_cache")
     counts = {}
     for table in tables:
         cur = conn.execute(f"SELECT COUNT(*) AS count FROM {table}")

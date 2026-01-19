@@ -33,12 +33,19 @@ async def run_startup_checks(bot, db, config) -> None:
 
     counts = await db.get_counts()
     log.info(
-        "Database counts: guild_settings=%s subscriptions=%s notification_log=%s",
+        "Database counts: guild_settings=%s subscriptions=%s notification_log=%s usage_cache=%s",
         counts["guild_settings"],
         counts["subscriptions"],
         counts["notification_log"],
+        counts["usage_cache"],
     )
     if counts["guild_settings"] == 0:
         log.info("No notify channels set yet. Run /set-notify-channel in each guild.")
+
+    usage_cache = await db.get_usage_cache()
+    if usage_cache and usage_cache.get("fetched_at"):
+        log.info("Usage cache last fetched at: %s", usage_cache["fetched_at"])
+    else:
+        log.info("Usage cache is empty; next run is scheduled for 8:00 AM Eastern.")
 
     log.info("Startup checks: complete")
