@@ -48,6 +48,13 @@ async def poll_once(bot, db, fr24, config) -> None:
         log.debug(
             "FR24 response for %s %s: %s flights", sub_type, code, len(flights)
         )
+        if flights:
+            log.info(
+                "FR24 sample flight data for %s %s: %s",
+                sub_type,
+                code,
+                json.dumps(flights[0], sort_keys=True, default=str),
+            )
         await _process_flights(
             bot=bot,
             db=db,
