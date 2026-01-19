@@ -84,6 +84,8 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         force=True,
     )
+    for logger_name in ("httpx", "fr24sdk", "fr24sdk.client", "fr24sdk.transport"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
     db = Database(config.sqlite_path)
     fr24 = Fr24Client(config.fr24_api_key, config.fr24_max_requests_per_min)

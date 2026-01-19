@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fr24sdk.client import Client
-from fr24sdk.exceptions import RateLimitError
+from fr24sdk.exceptions import RateLimitError, TransportError
 
 
 @dataclass(frozen=True)
@@ -132,6 +132,13 @@ class Fr24Client:
             self._log.warning("FR24 rate limit hit; backing off for 60 seconds")
             error = f"{type(exc).__name__}: {exc}"
             return Fr24Response(flights=[], credits=None, error=error, rate_limited=True)
+        except TransportError as exc:
+            snapshot = await self._rate_limiter.snapshot()
+            self._log.exception(
+                "FR24 transport error params=%s limiter=%s", params, snapshot
+            )
+            error = f"{type(exc).__name__}: {exc}"
+            return Fr24Response(flights=[], credits=None, error=error, rate_limited=False)
         except Exception as exc:
             self._log.exception("FR24 request failed params=%s", params)
             error = f"{type(exc).__name__}: {exc}"
@@ -184,6 +191,17 @@ class _RateLimiter:
                 self._cooldown_until = until
             if until > self._next_at:
                 self._next_at = until + self._min_interval
+
+    async def snapshot(self) -> dict[str, float | int]:
+        async with self._lock:
+            now = time.monotonic()
+            self._prune(now)
+            return {
+                "recent": len(self._recent),
+                "min_interval": self._min_interval,
+                "next_in": max(0.0, self._next_at - now),
+                "cooldown_in": max(0.0, self._cooldown_until - now),
+            }
 
     def _prune(self, now: float) -> None:
         cutoff = now - self._window_seconds
