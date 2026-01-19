@@ -62,4 +62,5 @@ See docs/deploy-unraid.md for details.
 - docs/commands.md
 - docs/deploy-unraid.md
 - docs/rate-limits.md
+- docs/ops.md
 - unraid-template.xml

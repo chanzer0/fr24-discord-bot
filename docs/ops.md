@@ -1,0 +1,63 @@
+# Ops and Admin CLI
+
+This repository includes a lightweight admin CLI that you can run inside the container terminal to inspect the SQLite database.
+
+## How to run
+Open the Unraid container terminal and run:
+
+```bash
+python -m src.admin <command> [options]
+```
+
+You can point it at a custom database file if needed:
+
+```bash
+python -m src.admin --db /data/bot.db <command>
+```
+
+## Commands
+### status
+Shows DB counts and configured notify channels.
+
+```bash
+python -m src.admin status
+```
+
+### guilds
+Lists guild notify channel settings.
+
+```bash
+python -m src.admin guilds
+```
+
+### subs
+Lists subscriptions with optional filters.
+
+```bash
+python -m src.admin subs
+python -m src.admin subs --guild 123 --type aircraft
+python -m src.admin subs --user 456 --code A388
+```
+
+### recent
+Shows recent notification logs.
+
+```bash
+python -m src.admin recent
+python -m src.admin recent --limit 50
+python -m src.admin recent --subscription 10
+```
+
+### clear-notifications
+Deletes notification log entries older than N days.
+
+```bash
+python -m src.admin clear-notifications --older-than-days 14
+```
+
+### export-subs
+Exports subscriptions as CSV to stdout.
+
+```bash
+python -m src.admin export-subs > /data/subscriptions.csv
+```

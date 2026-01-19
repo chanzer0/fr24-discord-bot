@@ -48,6 +48,13 @@ Before adding the repo as a template source, verify unraid-template.xml points a
 2. Run /set-notify-channel as the bot owner.
 3. Test /subscribe aircraft A388 or /subscribe airport WAW.
 
+## Container terminal tips
+- You can open a terminal for the container in Unraid and run:
+  - python -m src.admin status
+  - python -m src.admin subs
+  - python -m src.admin recent
+See docs/ops.md for the full admin CLI.
+
 ## Updates
 - Triggered by GitHub Actions on main.
 - Pull latest image in Unraid or use Watchtower to auto-update.
