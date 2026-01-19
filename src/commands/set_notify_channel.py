@@ -10,7 +10,23 @@ class TextChannelTransformer(app_commands.Transformer):
     async def transform(
         self, interaction: discord.Interaction, value: object
     ) -> discord.TextChannel:
+        log = logging.getLogger(__name__)
+        data = getattr(interaction, "data", {}) if interaction else {}
+        options = data.get("options") if isinstance(data, dict) else None
+        resolved_channels = None
+        if isinstance(data, dict):
+            resolved = data.get("resolved", {})
+            resolved_channels = resolved.get("channels") if isinstance(resolved, dict) else None
+        log.info(
+            "set-notify-channel transform start value=%r type=%s guild_id=%s options=%s resolved_channel_ids=%s",
+            value,
+            type(value).__name__,
+            getattr(interaction, "guild_id", None),
+            options,
+            list(resolved_channels.keys()) if isinstance(resolved_channels, dict) else None,
+        )
         if isinstance(value, discord.TextChannel):
+            log.info("set-notify-channel transform: value is already TextChannel id=%s", value.id)
             return value
 
         channel_id = None
@@ -23,7 +39,6 @@ class TextChannelTransformer(app_commands.Transformer):
             if raw_id and str(raw_id).isdigit():
                 channel_id = int(raw_id)
 
-        data = getattr(interaction, "data", {})
         if channel_id is None and isinstance(data, dict):
             for opt in data.get("options", []):
                 if opt.get("name") == "channel":
@@ -31,6 +46,7 @@ class TextChannelTransformer(app_commands.Transformer):
                     if raw_value and str(raw_value).isdigit():
                         channel_id = int(raw_value)
                     break
+        log.info("set-notify-channel transform: channel_id=%s", channel_id)
 
         if channel_id is not None:
             resolved = data.get("resolved") if isinstance(data, dict) else None
@@ -38,19 +54,33 @@ class TextChannelTransformer(app_commands.Transformer):
                 channels = resolved.get("channels", {})
                 channel_data = channels.get(str(channel_id))
                 if channel_data and channel_data.get("type") == 0:
+                    log.info(
+                        "set-notify-channel transform: resolved channel data name=%s type=%s",
+                        channel_data.get("name"),
+                        channel_data.get("type"),
+                    )
                     channel = interaction.guild.get_channel(channel_id) if interaction.guild else None
                     if channel and isinstance(channel, discord.TextChannel):
+                        log.info("set-notify-channel transform: found in guild cache id=%s", channel.id)
                         return channel
 
             channel = interaction.guild.get_channel(channel_id) if interaction.guild else None
             if channel is None:
+                log.info("set-notify-channel transform: fetching channel id=%s", channel_id)
                 try:
                     channel = await interaction.client.fetch_channel(channel_id)
                 except (discord.Forbidden, discord.NotFound, discord.HTTPException):
                     channel = None
             if isinstance(channel, discord.TextChannel):
+                log.info("set-notify-channel transform: fetched channel id=%s", channel.id)
                 return channel
 
+        log.error(
+            "set-notify-channel transform failed value=%r type=%s channel_id=%s",
+            value,
+            type(value).__name__,
+            channel_id,
+        )
         raise app_commands.TransformerError(value, self.type, self)
 
 
@@ -92,13 +122,21 @@ def register(tree, db, config) -> None:
 
     @set_notify_channel.error
     async def set_notify_channel_error(interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
+        error_value = None
+        error_type = None
+        if isinstance(error, app_commands.TransformerError):
+            error_value = getattr(error, "value", None)
+            error_type = getattr(error, "type", None)
         data = getattr(interaction, "data", None)
         raw_options = None
         if isinstance(data, dict):
             raw_options = data.get("options")
         log.error(
-            "set-notify-channel error: %s guild_id=%s user_id=%s channel_id=%s options=%s data=%s",
+            "set-notify-channel error: %s value=%r value_type=%s option_type=%s guild_id=%s user_id=%s channel_id=%s options=%s data=%s",
             error,
+            error_value,
+            type(error_value).__name__ if error_value is not None else None,
+            error_type,
             interaction.guild_id,
             getattr(interaction.user, "id", None),
             getattr(interaction, "channel_id", None),
