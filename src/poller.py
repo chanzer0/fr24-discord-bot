@@ -5,7 +5,9 @@ import hashlib
 import json
 import logging
 import random
+import time
 from datetime import datetime, timedelta, timezone
+from math import ceil
 
 import discord
 
@@ -17,8 +19,10 @@ async def poll_loop(bot, db, fr24, config, poller_state) -> None:
     log.info("Poll loop started")
     while True:
         await poller_state.wait_until_enabled()
+        cycle_started = time.monotonic()
+        metrics: dict | None = None
         try:
-            await poll_once(bot, db, fr24, config)
+            metrics = await poll_once(bot, db, fr24, config)
         except Exception as exc:
             log.exception("Poll loop failed")
             try:
@@ -32,14 +36,25 @@ async def poll_loop(bot, db, fr24, config, poller_state) -> None:
                 )
             except Exception:
                 log.exception("Failed to send poller error notification")
-        sleep_for = poller_state.interval_seconds + random.uniform(0, config.poll_jitter_seconds)
+        elapsed = time.monotonic() - cycle_started
+        base_sleep = max(0.0, poller_state.interval_seconds - elapsed)
+        sleep_for = base_sleep + random.uniform(0, config.poll_jitter_seconds)
+        if metrics:
+            log.info(
+                "Poll cycle complete: subs=%s unique=%s duration=%.1fs sleep=%.1fs",
+                metrics.get("subscriptions"),
+                metrics.get("unique"),
+                elapsed,
+                sleep_for,
+            )
         await poller_state.sleep(sleep_for)
 
 
-async def poll_once(bot, db, fr24, config) -> None:
+async def poll_once(bot, db, fr24, config) -> dict | None:
     log = logging.getLogger(__name__)
     subs = await db.fetch_subscriptions()
     if not subs:
+        log.info("Poll cycle skipped (no subscriptions)")
         return
 
     channel_map = await db.fetch_guild_channels()
@@ -48,6 +63,22 @@ async def poll_once(bot, db, fr24, config) -> None:
         key = (sub["type"], sub["code"])
         grouped.setdefault(key, []).append(sub)
 
+    unique_count = len(grouped)
+    estimated_min_seconds = 0
+    if unique_count:
+        estimated_min_seconds = ceil(
+            unique_count / max(1, config.fr24_max_requests_per_min)
+        ) * 60
+    log.info(
+        "Poll cycle start: subs=%s unique=%s min_cycle_seconds=%s max_requests_per_min=%s request_delay=%.1fs",
+        len(subs),
+        unique_count,
+        estimated_min_seconds,
+        config.fr24_max_requests_per_min,
+        config.fr24_request_delay_seconds,
+    )
+
+    rate_limit_notified = False
     for (sub_type, code), entries in grouped.items():
         log.debug("Polling FR24 for %s %s (%s subs)", sub_type, code, len(entries))
         if sub_type == "aircraft":
@@ -55,13 +86,25 @@ async def poll_once(bot, db, fr24, config) -> None:
         else:
             result = await fr24.fetch_by_airport_inbound(code)
         if result.error:
-            await _notify_poll_error(
-                bot,
-                channel_map,
-                config.bot_owner_ids,
-                {sub["guild_id"] for sub in entries},
-                f"FR24 request failed for {sub_type} {code}: {result.error}",
-            )
+            if result.rate_limited:
+                if not rate_limit_notified:
+                    await _notify_poll_error(
+                        bot,
+                        channel_map,
+                        config.bot_owner_ids,
+                        {sub["guild_id"] for sub in entries},
+                        f"FR24 rate limit hit for {sub_type} {code}. Backing off for 60s.",
+                    )
+                    rate_limit_notified = True
+                continue
+            else:
+                await _notify_poll_error(
+                    bot,
+                    channel_map,
+                    config.bot_owner_ids,
+                    {sub["guild_id"] for sub in entries},
+                    f"FR24 request failed for {sub_type} {code}: {result.error}",
+                )
             continue
 
         flights = result.flights
@@ -96,7 +139,11 @@ async def poll_once(bot, db, fr24, config) -> None:
         if config.fr24_request_delay_seconds > 0:
             await asyncio.sleep(config.fr24_request_delay_seconds)
 
-    log.info("Poll cycle complete")
+    return {
+        "subscriptions": len(subs),
+        "unique": unique_count,
+        "estimated_min_seconds": estimated_min_seconds,
+    }
 
 
 async def cleanup_loop(db, config) -> None:
@@ -146,38 +193,84 @@ async def _process_flights(
     if not flights:
         return
 
+    subs_by_guild: dict[str, list[dict]] = {}
+    for sub in subscriptions:
+        subs_by_guild.setdefault(sub["guild_id"], []).append(sub)
+
     for flight in flights:
         if not flight:
             continue
         flight_id = _build_flight_id(flight)
         if not flight_id:
             continue
-        for sub in subscriptions:
-            channel_id = channel_map.get(sub["guild_id"])
+        for guild_id, guild_subs in subs_by_guild.items():
+            channel_id = channel_map.get(guild_id)
             if not channel_id:
                 continue
-            already_sent = await db.notification_logged(sub["id"], flight_id)
-            if already_sent:
+            subscription_ids = [sub["id"] for sub in guild_subs]
+            already_logged = await db.fetch_logged_subscription_ids(
+                flight_id, subscription_ids
+            )
+            to_notify = [sub for sub in guild_subs if sub["id"] not in already_logged]
+            if not to_notify:
                 continue
+            user_ids = sorted({sub["user_id"] for sub in to_notify})
             sent = await _send_notification(
                 bot=bot,
                 config=config,
                 channel_id=channel_id,
-                user_id=sub["user_id"],
+                user_ids=user_ids,
                 flight=flight,
                 sub_type=sub_type,
                 code=code,
                 credits=credits,
             )
             if sent:
-                await db.log_notification(sub["id"], flight_id)
+                await db.log_notifications(
+                    [sub["id"] for sub in to_notify],
+                    flight_id,
+                )
+
+
+def _build_notification_content(user_ids: list[str], code: str, limit: int = 2000) -> str:
+    base = f"Flight update for {code}"
+    if not user_ids:
+        return base
+    mentions = [f"<@{user_id}>" for user_id in sorted(set(user_ids))]
+    full = f"{' '.join(mentions)} - {base}"
+    if len(full) <= limit:
+        return full
+
+    kept: list[str] = []
+    total = len(mentions)
+    for idx, mention in enumerate(mentions):
+        remaining = total - (idx + 1)
+        if remaining > 0:
+            suffix = f" and {remaining} more - {base}"
+        else:
+            suffix = f" - {base}"
+        candidate = f"{' '.join(kept + [mention])}{suffix}"
+        if len(candidate) > limit:
+            break
+        kept.append(mention)
+
+    if not kept:
+        return base
+    remaining = total - len(kept)
+    if remaining > 0:
+        content = f"{' '.join(kept)} and {remaining} more - {base}"
+    else:
+        content = f"{' '.join(kept)} - {base}"
+    if len(content) > limit:
+        return content[:limit]
+    return content
 
 
 async def _send_notification(
     bot,
     config,
     channel_id: str,
-    user_id: str,
+    user_ids: list[str],
     flight: dict,
     sub_type: str,
     code: str,
@@ -203,7 +296,8 @@ async def _send_notification(
     view = build_view(url)
 
     try:
-        await channel.send(content=f"<@{user_id}> Flight update for {code}", embed=embed, view=view)
+        content = _build_notification_content(user_ids, code)
+        await channel.send(content=content, embed=embed, view=view)
     except (discord.Forbidden, discord.HTTPException) as exc:
         log.warning("Failed to send notification to channel %s: %s", channel_id, exc)
         return False

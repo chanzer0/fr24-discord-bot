@@ -8,6 +8,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 - Owner-only default notification channel per guild via /set-notify-channel
 - Skycards-powered autocomplete for airports/models with owner refresh
 - Background polling with dedupe and backoff-friendly pacing
+- Per-guild notifications tag all subscribers for the same ICAO in a single message (mentions truncated if needed)
 - SQLite persistence with daily cleanup of stale notification logs
 - Docker-friendly for Unraid deployments
 
@@ -41,6 +42,7 @@ Requires Python 3.11+ (matches the Docker image).
 - POLL_INTERVAL_SECONDS (default 60)
 - POLL_JITTER_SECONDS (default 5)
 - FR24_REQUEST_DELAY_SECONDS (default 0.2)
+- FR24_MAX_REQUESTS_PER_MIN (default 10)
 - NOTIFICATION_RETENTION_DAYS (default 7)
 - SQLITE_PATH (default /data/bot.db)
 - FR24_WEB_BASE_URL (default https://www.flightradar24.com)

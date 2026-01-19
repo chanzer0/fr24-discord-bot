@@ -77,7 +77,7 @@ def main() -> None:
     )
 
     db = Database(config.sqlite_path)
-    fr24 = Fr24Client(config.fr24_api_key)
+    fr24 = Fr24Client(config.fr24_api_key, config.fr24_max_requests_per_min)
     reference_data = ReferenceDataService(
         db,
         config.skycards_api_base,

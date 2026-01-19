@@ -56,6 +56,7 @@ class Config:
     poll_interval_seconds: int
     poll_jitter_seconds: int
     fr24_request_delay_seconds: float
+    fr24_max_requests_per_min: int
     notification_retention_days: int
     sqlite_path: str
     fr24_web_base_url: str
@@ -72,6 +73,7 @@ def load_config() -> Config:
         poll_interval_seconds=_int_env("POLL_INTERVAL_SECONDS", 60),
         poll_jitter_seconds=_int_env("POLL_JITTER_SECONDS", 5),
         fr24_request_delay_seconds=_float_env("FR24_REQUEST_DELAY_SECONDS", 0.2),
+        fr24_max_requests_per_min=max(1, _int_env("FR24_MAX_REQUESTS_PER_MIN", 10)),
         notification_retention_days=_int_env("NOTIFICATION_RETENTION_DAYS", 7),
         sqlite_path=os.getenv("SQLITE_PATH", "/data/bot.db"),
         fr24_web_base_url=os.getenv("FR24_WEB_BASE_URL", "https://www.flightradar24.com"),

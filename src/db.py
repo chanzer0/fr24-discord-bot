@@ -295,6 +295,22 @@ class Database:
             row = await cur.fetchone()
         return row is not None
 
+    async def fetch_logged_subscription_ids(
+        self, flight_id: str, subscription_ids: list[int]
+    ) -> set[int]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        if not subscription_ids:
+            return set()
+        placeholders = ",".join("?" for _ in subscription_ids)
+        query = (
+            "SELECT subscription_id FROM notification_log "
+            f"WHERE flight_id = ? AND subscription_id IN ({placeholders})"
+        )
+        async with self._conn.execute(query, (flight_id, *subscription_ids)) as cur:
+            rows = await cur.fetchall()
+        return {row["subscription_id"] for row in rows}
+
     async def log_notification(self, subscription_id: int, flight_id: str) -> None:
         if not self._conn:
             raise RuntimeError("Database not connected")
@@ -304,6 +320,21 @@ class Database:
             VALUES (?, ?, ?)
             ''',
             (subscription_id, flight_id, utc_now_iso()),
+        )
+        await self._conn.commit()
+
+    async def log_notifications(self, subscription_ids: list[int], flight_id: str) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        if not subscription_ids:
+            return
+        notified_at = utc_now_iso()
+        await self._conn.executemany(
+            '''
+            INSERT OR IGNORE INTO notification_log (subscription_id, flight_id, notified_at)
+            VALUES (?, ?, ?)
+            ''',
+            [(sub_id, flight_id, notified_at) for sub_id in subscription_ids],
         )
         await self._conn.commit()
 
