@@ -29,14 +29,20 @@ class ChannelRefTransformer(app_commands.Transformer):
         resolved_channels = None
         if isinstance(data, dict):
             resolved = data.get("resolved", {})
-            resolved_channels = resolved.get("channels") if isinstance(resolved, dict) else None
+            resolved_channels = (
+                resolved.get("channels") if isinstance(resolved, dict) else None
+            )
         log.info(
             "set-notify-channel transform start value=%r type=%s guild_id=%s options=%s resolved_channel_ids=%s",
             value,
             type(value).__name__,
             getattr(interaction, "guild_id", None),
             options,
-            list(resolved_channels.keys()) if isinstance(resolved_channels, dict) else None,
+            (
+                list(resolved_channels.keys())
+                if isinstance(resolved_channels, dict)
+                else None
+            ),
         )
         if hasattr(value, "id") and hasattr(value, "type"):
             channel_id = int(getattr(value, "id"))
@@ -49,7 +55,9 @@ class ChannelRefTransformer(app_commands.Transformer):
                     permissions = discord.Permissions(int(permissions_raw))
                 except (TypeError, ValueError):
                     permissions = None
-            log.info("set-notify-channel transform: value is channel-like id=%s", channel_id)
+            log.info(
+                "set-notify-channel transform: value is channel-like id=%s", channel_id
+            )
             return ChannelRef(
                 id=channel_id,
                 name=name,
@@ -113,17 +121,24 @@ class ChannelRefTransformer(app_commands.Transformer):
 def register(tree, db, config) -> None:
     log = logging.getLogger(__name__)
 
-    @tree.command(name="set-notify-channel", description="Set the default notification channel for this guild.")
+    @tree.command(
+        name="set-notify-channel",
+        description="Set the default notification channel for this guild.",
+    )
     @app_commands.describe(channel="Channel to use for notifications")
     async def set_notify_channel(
         interaction: discord.Interaction,
         channel: app_commands.Transform[ChannelRef, ChannelRefTransformer],
     ) -> None:
         if interaction.guild_id is None:
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            await interaction.response.send_message(
+                "This command can only be used in a server.", ephemeral=True
+            )
             return
         if interaction.user.id != config.bot_owner_id:
-            await interaction.response.send_message("Only the bot owner can set the notify channel.", ephemeral=True)
+            await interaction.response.send_message(
+                "Only the bot owner can set the notify channel.", ephemeral=True
+            )
             return
 
         if channel.channel_type is not discord.ChannelType.text:
@@ -151,7 +166,9 @@ def register(tree, db, config) -> None:
         )
 
     @set_notify_channel.error
-    async def set_notify_channel_error(interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
+    async def set_notify_channel_error(
+        interaction: discord.Interaction, error: app_commands.AppCommandError
+    ) -> None:
         error_value = None
         error_type = None
         if isinstance(error, app_commands.TransformerError):

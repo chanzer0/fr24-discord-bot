@@ -61,3 +61,18 @@ Exports subscriptions as CSV to stdout.
 ```bash
 python -m src.admin export-subs > /data/subscriptions.csv
 ```
+
+### reference-status
+Shows reference dataset metadata (row counts and timestamps).
+
+```bash
+python -m src.admin reference-status
+```
+
+### refresh-reference
+Fetches airports/models from the Skycards API and stores them in SQLite.
+
+```bash
+python -m src.admin refresh-reference --dataset all
+python -m src.admin refresh-reference --dataset airports
+```

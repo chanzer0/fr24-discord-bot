@@ -6,6 +6,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 - Subscribe/unsubscribe to aircraft ICAO type codes (e.g., A388, C172)
 - Subscribe/unsubscribe to inbound airport ICAO codes (e.g., WAW)
 - Owner-only default notification channel per guild via /set-notify-channel
+- Skycards-powered autocomplete for airports/models with owner refresh
 - Background polling with dedupe and backoff-friendly pacing
 - SQLite persistence with daily cleanup of stale notification logs
 - Daily FR24 usage report broadcast and cached /usage command
@@ -16,6 +17,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 - /subscribe <aircraft|airport> <code>
 - /unsubscribe <aircraft|airport> <code>
 - /usage
+- /refresh-reference <airports|models|all> (owner-only)
 - /help
 
 ## Quickstart (local)
@@ -39,6 +41,8 @@ Requires Python 3.11+ (matches the Docker image).
 - NOTIFICATION_RETENTION_DAYS (default 7)
 - SQLITE_PATH (default /data/bot.db)
 - FR24_WEB_BASE_URL (default https://www.flightradar24.com)
+- SKYCARDS_API_BASE (default https://api.skycards.oldapes.com)
+- SKYCARDS_CLIENT_VERSION (default 2.0.18)
 - LOG_LEVEL (default INFO)
 
 ## Docker (local)
@@ -54,6 +58,7 @@ See docs/deploy-unraid.md for details.
 ## Data retention
 - The bot stores subscription metadata and a notification dedupe log only.
 - Notification logs are pruned daily based on NOTIFICATION_RETENTION_DAYS.
+- Airport/model reference data is cached in SQLite for autocomplete.
 
 ## Usage reporting
 - The bot fetches FR24 usage once daily at 8:00 AM Eastern and broadcasts it to all guild notify channels.

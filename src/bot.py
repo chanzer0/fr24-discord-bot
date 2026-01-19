@@ -10,22 +10,25 @@ from .db import Database
 from .fr24.client import Fr24Client
 from .health import run_startup_checks
 from .poller import cleanup_loop, poll_loop
+from .reference_data import ReferenceDataService
 from .usage import usage_loop
 
 
 class FlightBot(discord.Client):
-    def __init__(self, config, db, fr24) -> None:
+    def __init__(self, config, db, fr24, reference_data) -> None:
         intents = discord.Intents.default()
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.config = config
         self.db = db
         self.fr24 = fr24
+        self.reference_data = reference_data
 
     async def setup_hook(self) -> None:
         await self.db.connect()
         await self.db.init()
-        setup_commands(self.tree, self.db, self.config, self.fr24)
+        await self.reference_data.load_from_db()
+        setup_commands(self.tree, self.db, self.config, self.fr24, self.reference_data)
         await run_startup_checks(self, self.db, self.config)
         self.loop.create_task(poll_loop(self, self.db, self.fr24, self.config))
         self.loop.create_task(cleanup_loop(self.db, self.config))
@@ -54,7 +57,12 @@ def main() -> None:
 
     db = Database(config.sqlite_path)
     fr24 = Fr24Client(config.fr24_api_key)
-    bot = FlightBot(config, db, fr24)
+    reference_data = ReferenceDataService(
+        db,
+        config.skycards_api_base,
+        config.skycards_client_version,
+    )
+    bot = FlightBot(config, db, fr24, reference_data)
     bot.run(config.discord_token)
 
 

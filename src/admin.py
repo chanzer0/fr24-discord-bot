@@ -30,8 +30,51 @@ def _print_rows(rows: list[sqlite3.Row], columns: list[str]) -> None:
         print("  ".join(str(row[col]).ljust(widths[col]) for col in columns))
 
 
+def _ensure_reference_tables(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS reference_airports (
+            icao TEXT PRIMARY KEY,
+            iata TEXT,
+            name TEXT NOT NULL,
+            city TEXT,
+            place_code TEXT
+        )
+        '''
+    )
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS reference_models (
+            icao TEXT PRIMARY KEY,
+            manufacturer TEXT,
+            name TEXT NOT NULL
+        )
+        '''
+    )
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS reference_meta (
+            dataset TEXT PRIMARY KEY,
+            updated_at TEXT,
+            fetched_at TEXT NOT NULL,
+            row_count INTEGER NOT NULL
+        )
+        '''
+    )
+    conn.commit()
+
+
 def cmd_status(conn: sqlite3.Connection) -> None:
-    tables = ("guild_settings", "subscriptions", "notification_log", "usage_cache")
+    _ensure_reference_tables(conn)
+    tables = (
+        "guild_settings",
+        "subscriptions",
+        "notification_log",
+        "usage_cache",
+        "reference_airports",
+        "reference_models",
+        "reference_meta",
+    )
     counts = {}
     for table in tables:
         cur = conn.execute(f"SELECT COUNT(*) AS count FROM {table}")
@@ -46,6 +89,90 @@ def cmd_status(conn: sqlite3.Connection) -> None:
     if rows:
         print("Notify channels:")
         _print_rows(rows, ["guild_id", "notify_channel_id", "updated_at"])
+
+
+def cmd_reference_status(conn: sqlite3.Connection) -> None:
+    _ensure_reference_tables(conn)
+    cur = conn.execute(
+        "SELECT dataset, updated_at, fetched_at, row_count FROM reference_meta ORDER BY dataset"
+    )
+    rows = cur.fetchall()
+    if rows:
+        print("Reference datasets:")
+        _print_rows(rows, ["dataset", "row_count", "updated_at", "fetched_at"])
+    else:
+        print("No reference metadata found.")
+
+
+def cmd_refresh_reference(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
+    from .reference_data import (
+        fetch_reference_payload_sync,
+        parse_airports_payload,
+        parse_models_payload,
+    )
+
+    _ensure_reference_tables(conn)
+
+    datasets = (args.dataset,) if args.dataset != "all" else ("airports", "models")
+    for dataset in datasets:
+        endpoint = "airports" if dataset == "airports" else "models"
+        payload = fetch_reference_payload_sync(
+            args.skycards_api_base, endpoint, args.skycards_client_version
+        )
+        fetched_at = datetime.now(timezone.utc).isoformat()
+        if dataset == "airports":
+            updated_at, rows = parse_airports_payload(payload)
+            conn.execute("DELETE FROM reference_airports")
+            conn.executemany(
+                '''
+                INSERT INTO reference_airports (icao, iata, name, city, place_code)
+                VALUES (?, ?, ?, ?, ?)
+                ''',
+                [
+                    (
+                        row.get("icao"),
+                        row.get("iata"),
+                        row.get("name"),
+                        row.get("city"),
+                        row.get("place_code"),
+                    )
+                    for row in rows
+                ],
+            )
+            row_count = len(rows)
+        else:
+            updated_at, rows = parse_models_payload(payload)
+            conn.execute("DELETE FROM reference_models")
+            conn.executemany(
+                '''
+                INSERT INTO reference_models (icao, manufacturer, name)
+                VALUES (?, ?, ?)
+                ''',
+                [
+                    (
+                        row.get("icao"),
+                        row.get("manufacturer"),
+                        row.get("name"),
+                    )
+                    for row in rows
+                ],
+            )
+            row_count = len(rows)
+        conn.execute(
+            '''
+            INSERT INTO reference_meta (dataset, updated_at, fetched_at, row_count)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(dataset)
+            DO UPDATE SET updated_at = excluded.updated_at,
+                          fetched_at = excluded.fetched_at,
+                          row_count = excluded.row_count
+            ''',
+            (dataset, updated_at, fetched_at, row_count),
+        )
+        conn.commit()
+        print(
+            f"Refreshed {dataset}: {row_count} rows (updated_at={updated_at}, fetched_at={fetched_at})"
+        )
 
 
 def cmd_guilds(conn: sqlite3.Connection) -> None:
@@ -114,6 +241,16 @@ def cmd_export_subs(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="FR24 Discord bot admin CLI")
     parser.add_argument("--db", default=_default_db_path(), help="Path to SQLite DB")
+    parser.add_argument(
+        "--skycards-api-base",
+        default=os.getenv("SKYCARDS_API_BASE", "https://api.skycards.oldapes.com"),
+        help="Skycards API base URL",
+    )
+    parser.add_argument(
+        "--skycards-client-version",
+        default=os.getenv("SKYCARDS_CLIENT_VERSION", "2.0.18"),
+        help="Skycards client version header",
+    )
 
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -134,6 +271,12 @@ def build_parser() -> argparse.ArgumentParser:
     clear.add_argument("--older-than-days", type=int, default=7)
 
     sub.add_parser("export-subs", help="Export subscriptions as CSV")
+    sub.add_parser("reference-status", help="Show reference dataset status")
+
+    refresh = sub.add_parser("refresh-reference", help="Refresh reference datasets")
+    refresh.add_argument(
+        "--dataset", choices=["airports", "models", "all"], default="all"
+    )
     return parser
 
 
@@ -154,6 +297,10 @@ def main() -> None:
             cmd_clear_notifications(conn, args)
         elif args.command == "export-subs":
             cmd_export_subs(conn, args)
+        elif args.command == "reference-status":
+            cmd_reference_status(conn)
+        elif args.command == "refresh-reference":
+            cmd_refresh_reference(conn, args)
     finally:
         conn.close()
 

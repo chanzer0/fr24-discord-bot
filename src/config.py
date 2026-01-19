@@ -40,6 +40,8 @@ class Config:
     notification_retention_days: int
     sqlite_path: str
     fr24_web_base_url: str
+    skycards_api_base: str
+    skycards_client_version: str
     log_level: str
 
 
@@ -54,5 +56,7 @@ def load_config() -> Config:
         notification_retention_days=_int_env("NOTIFICATION_RETENTION_DAYS", 7),
         sqlite_path=os.getenv("SQLITE_PATH", "/data/bot.db"),
         fr24_web_base_url=os.getenv("FR24_WEB_BASE_URL", "https://www.flightradar24.com"),
+        skycards_api_base=os.getenv("SKYCARDS_API_BASE", "https://api.skycards.oldapes.com"),
+        skycards_client_version=os.getenv("SKYCARDS_CLIENT_VERSION", "2.0.18"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )

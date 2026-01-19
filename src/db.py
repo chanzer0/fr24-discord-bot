@@ -48,6 +48,30 @@ CREATE TABLE IF NOT EXISTS usage_cache (
     payload TEXT NOT NULL,
     fetched_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS reference_airports (
+    icao TEXT PRIMARY KEY,
+    iata TEXT,
+    name TEXT NOT NULL,
+    city TEXT,
+    place_code TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_reference_airports_iata
+    ON reference_airports (iata);
+
+CREATE TABLE IF NOT EXISTS reference_models (
+    icao TEXT PRIMARY KEY,
+    manufacturer TEXT,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reference_meta (
+    dataset TEXT PRIMARY KEY,
+    updated_at TEXT,
+    fetched_at TEXT NOT NULL,
+    row_count INTEGER NOT NULL
+);
 '''
 
 
@@ -232,4 +256,133 @@ class Database:
             "subscriptions": await _count("subscriptions"),
             "notification_log": await _count("notification_log"),
             "usage_cache": await _count("usage_cache"),
+            "reference_airports": await _count("reference_airports"),
+            "reference_models": await _count("reference_models"),
+            "reference_meta": await _count("reference_meta"),
         }
+
+    async def fetch_user_subscription_codes(
+        self, guild_id: str, user_id: str, sub_type: str
+    ) -> list[str]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            '''
+            SELECT code FROM subscriptions
+            WHERE guild_id = ? AND user_id = ? AND type = ?
+            ORDER BY code
+            ''',
+            (guild_id, user_id, sub_type),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [row["code"] for row in rows]
+
+    async def fetch_reference_airports(self) -> list[dict]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            '''
+            SELECT icao, iata, name, city, place_code
+            FROM reference_airports
+            ORDER BY icao
+            '''
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(row) for row in rows]
+
+    async def fetch_reference_models(self) -> list[dict]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            '''
+            SELECT icao, manufacturer, name
+            FROM reference_models
+            ORDER BY icao
+            '''
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(row) for row in rows]
+
+    async def get_reference_meta(self, dataset: str) -> dict | None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            '''
+            SELECT dataset, updated_at, fetched_at, row_count
+            FROM reference_meta
+            WHERE dataset = ?
+            ''',
+            (dataset,),
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def replace_reference_airports(
+        self, rows: list[dict], updated_at: str | None, fetched_at: str
+    ) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute("BEGIN")
+        await self._conn.execute("DELETE FROM reference_airports")
+        await self._conn.executemany(
+            '''
+            INSERT INTO reference_airports (icao, iata, name, city, place_code)
+            VALUES (?, ?, ?, ?, ?)
+            ''',
+            [
+                (
+                    row.get("icao"),
+                    row.get("iata"),
+                    row.get("name"),
+                    row.get("city"),
+                    row.get("place_code"),
+                )
+                for row in rows
+            ],
+        )
+        await self._conn.execute(
+            '''
+            INSERT INTO reference_meta (dataset, updated_at, fetched_at, row_count)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(dataset)
+            DO UPDATE SET updated_at = excluded.updated_at,
+                          fetched_at = excluded.fetched_at,
+                          row_count = excluded.row_count
+            ''',
+            ("airports", updated_at, fetched_at, len(rows)),
+        )
+        await self._conn.commit()
+
+    async def replace_reference_models(
+        self, rows: list[dict], updated_at: str | None, fetched_at: str
+    ) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute("BEGIN")
+        await self._conn.execute("DELETE FROM reference_models")
+        await self._conn.executemany(
+            '''
+            INSERT INTO reference_models (icao, manufacturer, name)
+            VALUES (?, ?, ?)
+            ''',
+            [
+                (
+                    row.get("icao"),
+                    row.get("manufacturer"),
+                    row.get("name"),
+                )
+                for row in rows
+            ],
+        )
+        await self._conn.execute(
+            '''
+            INSERT INTO reference_meta (dataset, updated_at, fetched_at, row_count)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(dataset)
+            DO UPDATE SET updated_at = excluded.updated_at,
+                          fetched_at = excluded.fetched_at,
+                          row_count = excluded.row_count
+            ''',
+            ("models", updated_at, fetched_at, len(rows)),
+        )
+        await self._conn.commit()

@@ -1,8 +1,9 @@
+.git
+.env
+.venv
 __pycache__/
 *.pyc
-.venv/
-.env
 data/
 *.db
-models.json
 airports.json
+models.json

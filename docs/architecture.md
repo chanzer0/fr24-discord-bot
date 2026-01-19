@@ -4,6 +4,7 @@
 - Discord bot (discord.py): slash commands, validation, and notifications.
 - FR24 client (fr24sdk): fetches live flight positions.
 - Poller: background task that groups subscriptions and queries FR24.
+- Reference data service: fetches airport/model data from Skycards and caches it for autocomplete.
 - SQLite storage: persists guild settings, subscriptions, and notification dedupe logs.
 - Usage reporter: daily FR24 usage fetch and cached broadcast.
 
@@ -14,6 +15,7 @@
 4. For each matching flight, the bot sends an embed to the guild's notify channel and tags the user.
 5. A dedupe log prevents repeated notifications for the same flight.
 6. A daily usage job fetches FR24 credits and broadcasts to each guild notify channel.
+7. The owner can run /refresh-reference to update airport/model data used for autocomplete.
 
 ## Storage
 - SQLite file at SQLITE_PATH (default /data/bot.db).
@@ -21,13 +23,17 @@
   - guild_settings: one row per guild with notify channel ID.
   - subscriptions: one row per user per (type, code).
   - notification_log: dedupe log to avoid repeat alerts.
-- usage_cache: cached usage payload and timestamp.
+  - usage_cache: cached usage payload and timestamp.
+  - reference_airports: ICAO/IATA and basic airport details used for autocomplete.
+  - reference_models: ICAO and aircraft model details used for autocomplete.
+  - reference_meta: metadata for the reference datasets.
 - WAL mode and busy timeout are enabled for stability on Unraid.
 
 ## Resource safeguards
 - Configurable polling interval and small request delay between FR24 calls.
 - Batch FR24 calls by (type, code) to avoid duplicate requests.
 - Daily cleanup of notification logs to cap database growth.
+- Reference datasets are stored in SQLite and cached in memory for fast autocomplete.
 - No full flight history is stored; only dedupe entries are retained.
 
 ## Observability

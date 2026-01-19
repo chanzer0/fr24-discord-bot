@@ -1,10 +1,41 @@
 import discord
 from discord import app_commands
 
+from ..reference_data import format_airport_label, format_model_label
 from ..validation import normalize_code
 
 
-def register(tree, db, config) -> None:
+def _resolve_subscription_type(interaction: discord.Interaction) -> str | None:
+    namespace = getattr(interaction, "namespace", None)
+    value = getattr(namespace, "subscription_type", None)
+    if isinstance(value, app_commands.Choice):
+        return value.value
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def register(tree, db, config, reference_data) -> None:
+    async def code_autocomplete(
+        interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        sub_type = _resolve_subscription_type(interaction)
+        if sub_type == "aircraft":
+            models = await reference_data.search_models(current)
+            return [
+                app_commands.Choice(name=format_model_label(model), value=model.icao)
+                for model in models
+            ]
+        if sub_type == "airport":
+            airports = await reference_data.search_airports(current)
+            return [
+                app_commands.Choice(
+                    name=format_airport_label(airport), value=airport.icao
+                )
+                for airport in airports
+            ]
+        return []
+
     @tree.command(name="subscribe", description="Subscribe to aircraft or inbound airport alerts.")
     @app_commands.describe(subscription_type="Subscription type", code="ICAO code")
     @app_commands.choices(
@@ -13,6 +44,7 @@ def register(tree, db, config) -> None:
             app_commands.Choice(name="airport", value="airport"),
         ]
     )
+    @app_commands.autocomplete(code=code_autocomplete)
     async def subscribe(
         interaction: discord.Interaction,
         subscription_type: app_commands.Choice[str],
@@ -45,11 +77,25 @@ def register(tree, db, config) -> None:
             code=normalized,
         )
 
+        warning = None
+        if subscription_type.value == "aircraft":
+            found = await reference_data.get_model(normalized)
+            if not found and await reference_data.has_models():
+                warning = (
+                    "Warning: that aircraft ICAO is not in the Skycards reference data."
+                )
+        else:
+            found = await reference_data.get_airport(normalized)
+            if not found and await reference_data.has_airports():
+                warning = (
+                    "Warning: that airport ICAO is not in the Skycards reference data."
+                )
+
         if inserted:
-            await interaction.response.send_message(
-                f"Subscribed to {subscription_type.value} {normalized}.",
-                ephemeral=True,
-            )
+            message = f"Subscribed to {subscription_type.value} {normalized}."
+            if warning:
+                message = f"{message}\n{warning}"
+            await interaction.response.send_message(message, ephemeral=True)
         else:
             await interaction.response.send_message(
                 f"You are already subscribed to {subscription_type.value} {normalized}.",
