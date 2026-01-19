@@ -155,10 +155,15 @@ def register(tree, db, config) -> None:
             )
             return
 
+        guild_name = interaction.guild.name if interaction.guild else None
+        user_name = getattr(interaction.user, "display_name", None) or interaction.user.name
         await db.set_guild_notify_channel(
             guild_id=str(interaction.guild_id),
             channel_id=str(channel.id),
             updated_by=str(interaction.user.id),
+            guild_name=guild_name,
+            channel_name=channel.name,
+            updated_by_name=user_name,
         )
         await interaction.response.send_message(
             f"Notifications will be posted in {channel.mention}.",

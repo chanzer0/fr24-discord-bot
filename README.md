@@ -59,6 +59,7 @@ See docs/deploy-unraid.md for details.
 - The bot stores subscription metadata and a notification dedupe log only.
 - Notification logs are pruned daily based on NOTIFICATION_RETENTION_DAYS.
 - Airport/model reference data is cached in SQLite for autocomplete.
+- Guild, channel, and user display names are stored alongside IDs for easier admin visibility.
 
 ## Usage reporting
 - The bot fetches FR24 usage once daily at 8:00 AM Eastern and broadcasts it to all guild notify channels.

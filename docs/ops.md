@@ -62,6 +62,8 @@ Exports subscriptions as CSV to stdout.
 python -m src.admin export-subs > /data/subscriptions.csv
 ```
 
+CSV columns include guild/user names alongside IDs for easier review.
+
 ### reference-status
 Shows reference dataset metadata (row counts and timestamps).
 

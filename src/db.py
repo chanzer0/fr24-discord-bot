@@ -12,15 +12,20 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS guild_settings (
     guild_id TEXT PRIMARY KEY,
+    guild_name TEXT,
     notify_channel_id TEXT NOT NULL,
+    notify_channel_name TEXT,
     updated_by TEXT NOT NULL,
+    updated_by_name TEXT,
     updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS subscriptions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id TEXT NOT NULL,
+    guild_name TEXT,
     user_id TEXT NOT NULL,
+    user_name TEXT,
     type TEXT NOT NULL CHECK (type IN ("aircraft", "airport")),
     code TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -96,6 +101,40 @@ class Database:
             raise RuntimeError("Database not connected")
         await self._conn.executescript(_SCHEMA_SQL)
         await self._conn.commit()
+        await self._ensure_columns()
+
+    async def _ensure_columns(self) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._ensure_table_columns(
+            "guild_settings",
+            {
+                "guild_name": "TEXT",
+                "notify_channel_name": "TEXT",
+                "updated_by_name": "TEXT",
+            },
+        )
+        await self._ensure_table_columns(
+            "subscriptions",
+            {
+                "guild_name": "TEXT",
+                "user_name": "TEXT",
+            },
+        )
+        await self._conn.commit()
+
+    async def _ensure_table_columns(self, table: str, columns: dict[str, str]) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(f"PRAGMA table_info({table})") as cur:
+            rows = await cur.fetchall()
+        existing = {row["name"] for row in rows}
+        for column, col_type in columns.items():
+            if column in existing:
+                continue
+            await self._conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
+            )
 
     async def _changes(self) -> int:
         if not self._conn:
@@ -108,7 +147,12 @@ class Database:
         if not self._conn:
             raise RuntimeError("Database not connected")
         async with self._conn.execute(
-            "SELECT guild_id, notify_channel_id FROM guild_settings WHERE guild_id = ?",
+            '''
+            SELECT guild_id, guild_name, notify_channel_id, notify_channel_name,
+                   updated_by, updated_by_name, updated_at
+            FROM guild_settings
+            WHERE guild_id = ?
+            ''',
             (guild_id,),
         ) as cur:
             row = await cur.fetchone()
@@ -123,34 +167,83 @@ class Database:
             rows = await cur.fetchall()
         return {row["guild_id"]: row["notify_channel_id"] for row in rows}
 
-    async def set_guild_notify_channel(self, guild_id: str, channel_id: str, updated_by: str) -> None:
+    async def set_guild_notify_channel(
+        self,
+        guild_id: str,
+        channel_id: str,
+        updated_by: str,
+        guild_name: str | None = None,
+        channel_name: str | None = None,
+        updated_by_name: str | None = None,
+    ) -> None:
         if not self._conn:
             raise RuntimeError("Database not connected")
         await self._conn.execute(
             '''
-            INSERT INTO guild_settings (guild_id, notify_channel_id, updated_by, updated_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO guild_settings (
+                guild_id,
+                guild_name,
+                notify_channel_id,
+                notify_channel_name,
+                updated_by,
+                updated_by_name,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(guild_id)
-            DO UPDATE SET notify_channel_id = excluded.notify_channel_id,
+            DO UPDATE SET guild_name = excluded.guild_name,
+                          notify_channel_id = excluded.notify_channel_id,
+                          notify_channel_name = excluded.notify_channel_name,
                           updated_by = excluded.updated_by,
+                          updated_by_name = excluded.updated_by_name,
                           updated_at = excluded.updated_at
             ''',
-            (guild_id, channel_id, updated_by, utc_now_iso()),
+            (
+                guild_id,
+                guild_name,
+                channel_id,
+                channel_name,
+                updated_by,
+                updated_by_name,
+                utc_now_iso(),
+            ),
         )
         await self._conn.commit()
 
-    async def add_subscription(self, guild_id: str, user_id: str, sub_type: str, code: str) -> bool:
+    async def add_subscription(
+        self,
+        guild_id: str,
+        user_id: str,
+        sub_type: str,
+        code: str,
+        guild_name: str | None = None,
+        user_name: str | None = None,
+    ) -> bool:
         if not self._conn:
             raise RuntimeError("Database not connected")
         await self._conn.execute(
             '''
-            INSERT OR IGNORE INTO subscriptions (guild_id, user_id, type, code, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT OR IGNORE INTO subscriptions (
+                guild_id, guild_name, user_id, user_name, type, code, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ''',
-            (guild_id, user_id, sub_type, code, utc_now_iso()),
+            (guild_id, guild_name, user_id, user_name, sub_type, code, utc_now_iso()),
         )
         await self._conn.commit()
-        return await self._changes() == 1
+        inserted = await self._changes() == 1
+        if not inserted and (guild_name or user_name):
+            await self._conn.execute(
+                '''
+                UPDATE subscriptions
+                SET guild_name = COALESCE(?, guild_name),
+                    user_name = COALESCE(?, user_name)
+                WHERE guild_id = ? AND user_id = ? AND type = ? AND code = ?
+                ''',
+                (guild_name, user_name, guild_id, user_id, sub_type, code),
+            )
+            await self._conn.commit()
+        return inserted
 
     async def remove_subscription(self, guild_id: str, user_id: str, sub_type: str, code: str) -> bool:
         if not self._conn:

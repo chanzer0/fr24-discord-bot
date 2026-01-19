@@ -59,10 +59,10 @@ class Fr24Client:
         self._log = logging.getLogger(__name__)
 
     async def fetch_by_aircraft(self, code: str) -> list[dict]:
-        return await self._call({"operating_as": code})
+        return await self._call({"operating_as": [code]})
 
     async def fetch_by_airport_inbound(self, code: str) -> list[dict]:
-        return await self._call({"airports": f"inbound:{code}"})
+        return await self._call({"airports": [f"inbound:{code}"]})
 
     async def fetch_usage(self) -> dict:
         def _sync_call() -> Any:

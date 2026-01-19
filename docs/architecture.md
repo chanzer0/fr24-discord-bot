@@ -20,8 +20,8 @@
 ## Storage
 - SQLite file at SQLITE_PATH (default /data/bot.db).
 - Tables:
-  - guild_settings: one row per guild with notify channel ID.
-  - subscriptions: one row per user per (type, code).
+  - guild_settings: one row per guild with notify channel ID, plus guild/channel names.
+  - subscriptions: one row per user per (type, code), including user/guild display names.
   - notification_log: dedupe log to avoid repeat alerts.
   - usage_cache: cached usage payload and timestamp.
   - reference_airports: ICAO/IATA and basic airport details used for autocomplete.

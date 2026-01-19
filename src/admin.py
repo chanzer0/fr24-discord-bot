@@ -30,6 +30,23 @@ def _print_rows(rows: list[sqlite3.Row], columns: list[str]) -> None:
         print("  ".join(str(row[col]).ljust(widths[col]) for col in columns))
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, col_type: str) -> None:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    existing = {row["name"] for row in rows}
+    if column in existing:
+        return
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+    conn.commit()
+
+
+def _ensure_core_columns(conn: sqlite3.Connection) -> None:
+    _ensure_column(conn, "guild_settings", "guild_name", "TEXT")
+    _ensure_column(conn, "guild_settings", "notify_channel_name", "TEXT")
+    _ensure_column(conn, "guild_settings", "updated_by_name", "TEXT")
+    _ensure_column(conn, "subscriptions", "guild_name", "TEXT")
+    _ensure_column(conn, "subscriptions", "user_name", "TEXT")
+
+
 def _ensure_reference_tables(conn: sqlite3.Connection) -> None:
     conn.execute(
         '''
@@ -65,6 +82,7 @@ def _ensure_reference_tables(conn: sqlite3.Connection) -> None:
 
 
 def cmd_status(conn: sqlite3.Connection) -> None:
+    _ensure_core_columns(conn)
     _ensure_reference_tables(conn)
     tables = (
         "guild_settings",
@@ -83,12 +101,19 @@ def cmd_status(conn: sqlite3.Connection) -> None:
     print("Counts:", ", ".join(f"{k}={v}" for k, v in counts.items()))
 
     cur = conn.execute(
-        "SELECT guild_id, notify_channel_id, updated_at FROM guild_settings ORDER BY guild_id"
+        '''
+        SELECT guild_id, guild_name, notify_channel_id, notify_channel_name, updated_at
+        FROM guild_settings
+        ORDER BY guild_id
+        '''
     )
     rows = cur.fetchall()
     if rows:
         print("Notify channels:")
-        _print_rows(rows, ["guild_id", "notify_channel_id", "updated_at"])
+        _print_rows(
+            rows,
+            ["guild_id", "guild_name", "notify_channel_id", "notify_channel_name", "updated_at"],
+        )
 
 
 def cmd_reference_status(conn: sqlite3.Connection) -> None:
@@ -176,16 +201,38 @@ def cmd_refresh_reference(conn: sqlite3.Connection, args: argparse.Namespace) ->
 
 
 def cmd_guilds(conn: sqlite3.Connection) -> None:
+    _ensure_core_columns(conn)
     cur = conn.execute(
-        "SELECT guild_id, notify_channel_id, updated_by, updated_at FROM guild_settings ORDER BY guild_id"
+        '''
+        SELECT guild_id, guild_name, notify_channel_id, notify_channel_name,
+               updated_by, updated_by_name, updated_at
+        FROM guild_settings
+        ORDER BY guild_id
+        '''
     )
     rows = cur.fetchall()
-    _print_rows(rows, ["guild_id", "notify_channel_id", "updated_by", "updated_at"])
+    _print_rows(
+        rows,
+        [
+            "guild_id",
+            "guild_name",
+            "notify_channel_id",
+            "notify_channel_name",
+            "updated_by",
+            "updated_by_name",
+            "updated_at",
+        ],
+    )
 
 
 def cmd_subs(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
+    _ensure_core_columns(conn)
     query = (
-        "SELECT id, guild_id, user_id, type, code, created_at FROM subscriptions WHERE 1=1"
+        '''
+        SELECT id, guild_id, guild_name, user_id, user_name, type, code, created_at
+        FROM subscriptions
+        WHERE 1=1
+        '''
     )
     params = []
     if args.guild:
@@ -202,7 +249,19 @@ def cmd_subs(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
         params.append(args.code.upper())
     query += " ORDER BY created_at DESC"
     rows = conn.execute(query, params).fetchall()
-    _print_rows(rows, ["id", "guild_id", "user_id", "type", "code", "created_at"])
+    _print_rows(
+        rows,
+        [
+            "id",
+            "guild_id",
+            "guild_name",
+            "user_id",
+            "user_name",
+            "type",
+            "code",
+            "created_at",
+        ],
+    )
 
 
 def cmd_recent(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
@@ -230,12 +289,30 @@ def cmd_clear_notifications(conn: sqlite3.Connection, args: argparse.Namespace) 
 
 
 def cmd_export_subs(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
-    query = "SELECT id, guild_id, user_id, type, code, created_at FROM subscriptions ORDER BY created_at DESC"
+    _ensure_core_columns(conn)
+    query = '''
+        SELECT id, guild_id, guild_name, user_id, user_name, type, code, created_at
+        FROM subscriptions
+        ORDER BY created_at DESC
+    '''
     rows = conn.execute(query).fetchall()
     writer = csv.writer(os.sys.stdout)
-    writer.writerow(["id", "guild_id", "user_id", "type", "code", "created_at"])
+    writer.writerow(
+        ["id", "guild_id", "guild_name", "user_id", "user_name", "type", "code", "created_at"]
+    )
     for row in rows:
-        writer.writerow([row["id"], row["guild_id"], row["user_id"], row["type"], row["code"], row["created_at"]])
+        writer.writerow(
+            [
+                row["id"],
+                row["guild_id"],
+                row["guild_name"],
+                row["user_id"],
+                row["user_name"],
+                row["type"],
+                row["code"],
+                row["created_at"],
+            ]
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:

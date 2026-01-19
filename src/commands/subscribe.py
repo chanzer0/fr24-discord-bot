@@ -75,6 +75,8 @@ def register(tree, db, config, reference_data) -> None:
             user_id=str(interaction.user.id),
             sub_type=subscription_type.value,
             code=normalized,
+            guild_name=interaction.guild.name if interaction.guild else None,
+            user_name=getattr(interaction.user, "display_name", None) or interaction.user.name,
         )
 
         warning = None
