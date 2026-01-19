@@ -1,15 +1,28 @@
 import logging
+from dataclasses import dataclass
 
 import discord
 from discord import app_commands
 
 
-class TextChannelTransformer(app_commands.Transformer):
+@dataclass(frozen=True)
+class ChannelRef:
+    id: int
+    name: str
+    channel_type: discord.ChannelType
+    permissions: discord.Permissions | None
+
+    @property
+    def mention(self) -> str:
+        return f"<#{self.id}>"
+
+
+class ChannelRefTransformer(app_commands.Transformer):
     type = discord.AppCommandOptionType.channel
 
     async def transform(
         self, interaction: discord.Interaction, value: object
-    ) -> discord.TextChannel:
+    ) -> ChannelRef:
         log = logging.getLogger(__name__)
         data = getattr(interaction, "data", {}) if interaction else {}
         options = data.get("options") if isinstance(data, dict) else None
@@ -25,9 +38,24 @@ class TextChannelTransformer(app_commands.Transformer):
             options,
             list(resolved_channels.keys()) if isinstance(resolved_channels, dict) else None,
         )
-        if isinstance(value, discord.TextChannel):
-            log.info("set-notify-channel transform: value is already TextChannel id=%s", value.id)
-            return value
+        if hasattr(value, "id") and hasattr(value, "type"):
+            channel_id = int(getattr(value, "id"))
+            name = getattr(value, "name", str(channel_id))
+            channel_type = getattr(value, "type")
+            permissions_raw = getattr(value, "permissions", None)
+            permissions = None
+            if permissions_raw is not None:
+                try:
+                    permissions = discord.Permissions(int(permissions_raw))
+                except (TypeError, ValueError):
+                    permissions = None
+            log.info("set-notify-channel transform: value is channel-like id=%s", channel_id)
+            return ChannelRef(
+                id=channel_id,
+                name=name,
+                channel_type=channel_type,
+                permissions=permissions,
+            )
 
         channel_id = None
         if isinstance(value, int):
@@ -59,21 +87,19 @@ class TextChannelTransformer(app_commands.Transformer):
                         channel_data.get("name"),
                         channel_data.get("type"),
                     )
-                    channel = interaction.guild.get_channel(channel_id) if interaction.guild else None
-                    if channel and isinstance(channel, discord.TextChannel):
-                        log.info("set-notify-channel transform: found in guild cache id=%s", channel.id)
-                        return channel
-
-            channel = interaction.guild.get_channel(channel_id) if interaction.guild else None
-            if channel is None:
-                log.info("set-notify-channel transform: fetching channel id=%s", channel_id)
-                try:
-                    channel = await interaction.client.fetch_channel(channel_id)
-                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-                    channel = None
-            if isinstance(channel, discord.TextChannel):
-                log.info("set-notify-channel transform: fetched channel id=%s", channel.id)
-                return channel
+                    permissions = None
+                    permissions_raw = channel_data.get("permissions")
+                    if permissions_raw is not None:
+                        try:
+                            permissions = discord.Permissions(int(permissions_raw))
+                        except (TypeError, ValueError):
+                            permissions = None
+                    return ChannelRef(
+                        id=channel_id,
+                        name=channel_data.get("name", str(channel_id)),
+                        channel_type=discord.ChannelType.text,
+                        permissions=permissions,
+                    )
 
         log.error(
             "set-notify-channel transform failed value=%r type=%s channel_id=%s",
@@ -91,7 +117,7 @@ def register(tree, db, config) -> None:
     @app_commands.describe(channel="Channel to use for notifications")
     async def set_notify_channel(
         interaction: discord.Interaction,
-        channel: app_commands.Transform[discord.TextChannel, TextChannelTransformer],
+        channel: app_commands.Transform[ChannelRef, ChannelRefTransformer],
     ) -> None:
         if interaction.guild_id is None:
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
@@ -100,15 +126,19 @@ def register(tree, db, config) -> None:
             await interaction.response.send_message("Only the bot owner can set the notify channel.", ephemeral=True)
             return
 
-        me = interaction.guild.me or interaction.guild.get_member(interaction.client.user.id)
-        if me:
-            perms = channel.permissions_for(me)
-            if not perms.send_messages:
-                await interaction.response.send_message(
-                    f"I don't have permission to send messages in {channel.mention}.",
-                    ephemeral=True,
-                )
-                return
+        if channel.channel_type is not discord.ChannelType.text:
+            await interaction.response.send_message(
+                "Please select a text channel for notifications.",
+                ephemeral=True,
+            )
+            return
+
+        if channel.permissions and not channel.permissions.send_messages:
+            await interaction.response.send_message(
+                f"I don't have permission to send messages in {channel.mention}.",
+                ephemeral=True,
+            )
+            return
 
         await db.set_guild_notify_channel(
             guild_id=str(interaction.guild_id),
