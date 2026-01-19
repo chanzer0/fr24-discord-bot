@@ -16,7 +16,7 @@ from .notify import build_embed, build_fr24_link, build_view
 
 async def _resolve_airport_codes(
     code: str, reference_data
-) -> tuple[str, str] | None:
+) -> tuple[str, str, set[str]] | None:
     value = code.strip().upper()
     if not value:
         return None
@@ -24,17 +24,45 @@ async def _resolve_airport_codes(
         ref = await reference_data.get_airport_by_iata(value)
         if ref:
             preferred = ref.iata or ref.icao or value
-            return preferred, preferred
-        return (value, value) if value.isalpha() else None
+            match_codes = {ref.icao, ref.iata}
+            return preferred, preferred, {code for code in match_codes if code}
+        return (value, value, {value}) if value.isalpha() else None
     if len(value) == 4:
         ref = await reference_data.get_airport(value)
         if ref:
             preferred = ref.iata or ref.icao or value
-            return preferred, preferred
-        return (value, value) if value.isalpha() else None
+            match_codes = {ref.icao, ref.iata}
+            return preferred, preferred, {code for code in match_codes if code}
+        return (value, value, {value}) if value.isalpha() else None
     if len(value) == 2 and value.isalpha():
-        return value, value
+        return value, value, {value}
     return None
+
+
+def _chunked(values: list[str], size: int) -> list[list[str]]:
+    if size <= 0:
+        return [values]
+    return [values[idx : idx + size] for idx in range(0, len(values), size)]
+
+
+def _extract_destination_codes(flight: dict) -> set[str]:
+    keys = (
+        "dest_iata",
+        "destination_iata",
+        "dest_icao",
+        "destination_icao",
+        "destination",
+        "dest",
+    )
+    codes = set()
+    for key in keys:
+        value = flight.get(key)
+        if not value:
+            continue
+        code = str(value).strip().upper()
+        if code:
+            codes.add(code)
+    return codes
 
 async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None:
     log = logging.getLogger(__name__)
@@ -63,9 +91,10 @@ async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None
         sleep_for = base_sleep + random.uniform(0, config.poll_jitter_seconds)
         if metrics:
             log.info(
-                "Poll cycle complete: subs=%s unique=%s duration=%.1fs sleep=%.1fs",
+                "Poll cycle complete: subs=%s unique=%s requests=%s duration=%.1fs sleep=%.1fs",
                 metrics.get("subscriptions"),
                 metrics.get("unique"),
+                metrics.get("requests"),
                 elapsed,
                 sleep_for,
             )
@@ -80,8 +109,9 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         return
 
     channel_map = await db.fetch_guild_channels()
-    grouped: dict[tuple[str, str, str], list[dict]] = {}
-    airport_cache: dict[str, tuple[str, str] | None] = {}
+    aircraft_groups: dict[str, list[dict]] = {}
+    airport_targets: dict[str, dict] = {}
+    airport_cache: dict[str, tuple[str, str, set[str]] | None] = {}
     for sub in subs:
         sub_type = sub["type"]
         code = sub["code"]
@@ -97,39 +127,50 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     code,
                 )
                 continue
-            request_code, display_code = resolved
-            key = (sub_type, request_code, display_code)
+            request_code, display_code, match_codes = resolved
+            target = airport_targets.setdefault(
+                request_code,
+                {"display_code": display_code, "match_codes": set(), "subs": []},
+            )
+            target["match_codes"].update(match_codes)
+            target["subs"].append(sub)
         else:
-            key = (sub_type, code, code)
-        grouped.setdefault(key, []).append(sub)
+            aircraft_groups.setdefault(code, []).append(sub)
 
-    unique_count = len(grouped)
+    batchable_codes = [
+        code for code in airport_targets.keys() if len(code) in (3, 4)
+    ]
+    country_codes = [code for code in airport_targets.keys() if len(code) == 2]
+    batches = _chunked(batchable_codes, config.fr24_airport_batch_size)
+
+    unique_count = len(aircraft_groups) + len(airport_targets)
+    total_requests = len(aircraft_groups) + len(country_codes) + len(batches)
     estimated_min_seconds = 0
-    if unique_count:
+    if total_requests:
         estimated_min_seconds = ceil(
-            unique_count / max(1, config.fr24_max_requests_per_min)
+            total_requests / max(1, config.fr24_max_requests_per_min)
         ) * 60
     log.info(
-        "Poll cycle start: subs=%s unique=%s min_cycle_seconds=%s max_requests_per_min=%s request_delay=%.1fs",
+        "Poll cycle start: subs=%s aircraft=%s airports=%s airport_batches=%s requests=%s min_cycle_seconds=%s max_requests_per_min=%s request_delay=%.1fs batch_size=%s",
         len(subs),
-        unique_count,
+        len(aircraft_groups),
+        len(airport_targets),
+        len(batches),
+        total_requests,
         estimated_min_seconds,
         config.fr24_max_requests_per_min,
         config.fr24_request_delay_seconds,
+        config.fr24_airport_batch_size,
     )
 
     rate_limit_notified = False
-    for (sub_type, request_code, display_code), entries in grouped.items():
+    for aircraft_code, entries in aircraft_groups.items():
         log.debug(
-            "Polling FR24 for %s %s (%s subs)",
-            sub_type,
-            request_code,
+            "Polling FR24 for aircraft %s (%s subs)",
+            aircraft_code,
             len(entries),
         )
-        if sub_type == "aircraft":
-            result = await fr24.fetch_by_aircraft(request_code)
-        else:
-            result = await fr24.fetch_by_airport_inbound(request_code)
+        result = await fr24.fetch_by_aircraft(aircraft_code)
         if result.error:
             if result.rate_limited:
                 if not rate_limit_notified:
@@ -138,18 +179,17 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                         channel_map,
                         config.bot_owner_ids,
                         {sub["guild_id"] for sub in entries},
-                        f"FR24 rate limit hit for {sub_type} {request_code}. Backing off for 60s.",
+                        f"FR24 rate limit hit for aircraft {aircraft_code}. Backing off for 60s.",
                     )
                     rate_limit_notified = True
                 continue
-            else:
-                await _notify_poll_error(
-                    bot,
-                    channel_map,
-                    config.bot_owner_ids,
-                    {sub["guild_id"] for sub in entries},
-                    f"FR24 request failed for {sub_type} {request_code}: {result.error}",
-                )
+            await _notify_poll_error(
+                bot,
+                channel_map,
+                config.bot_owner_ids,
+                {sub["guild_id"] for sub in entries},
+                f"FR24 request failed for aircraft {aircraft_code}: {result.error}",
+            )
             continue
 
         flights = result.flights
@@ -161,12 +201,15 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 updated_at=datetime.now(timezone.utc).isoformat(),
             )
 
-        log.debug("FR24 response for %s %s: %s flights", sub_type, code, len(flights))
+        log.debug(
+            "FR24 response for aircraft %s: %s flights",
+            aircraft_code,
+            len(flights),
+        )
         if flights:
             log.info(
-                "FR24 sample flight data for %s %s: %s",
-                sub_type,
-                request_code,
+                "FR24 sample flight data for aircraft %s: %s",
+                aircraft_code,
                 json.dumps(flights[0], sort_keys=True, default=str),
             )
         await _process_flights(
@@ -176,8 +219,167 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             channel_map=channel_map,
             subscriptions=entries,
             flights=flights,
-            sub_type=sub_type,
-            display_code=display_code,
+            sub_type="aircraft",
+            display_code=aircraft_code,
+            credits=credits,
+        )
+
+        if config.fr24_request_delay_seconds > 0:
+            await asyncio.sleep(config.fr24_request_delay_seconds)
+
+    for batch in batches:
+        batch_targets = [airport_targets[code] for code in batch if code in airport_targets]
+        batch_subs = [sub for target in batch_targets for sub in target["subs"]]
+        log.debug(
+            "Polling FR24 for airports inbound=%s (%s subs)",
+            ",".join(batch),
+            len(batch_subs),
+        )
+        result = await fr24.fetch_by_airports_inbound(batch)
+        if result.error:
+            if result.rate_limited:
+                if not rate_limit_notified:
+                    await _notify_poll_error(
+                        bot,
+                        channel_map,
+                        config.bot_owner_ids,
+                        {sub["guild_id"] for sub in batch_subs},
+                        "FR24 rate limit hit for airport batch. Backing off for 60s.",
+                    )
+                    rate_limit_notified = True
+                continue
+            await _notify_poll_error(
+                bot,
+                channel_map,
+                config.bot_owner_ids,
+                {sub["guild_id"] for sub in batch_subs},
+                f"FR24 request failed for airport batch {','.join(batch)}: {result.error}",
+            )
+            continue
+
+        flights = result.flights
+        credits = result.credits
+        if credits and (credits.remaining is not None or credits.consumed is not None):
+            await db.set_fr24_credits(
+                remaining=credits.remaining,
+                consumed=credits.consumed,
+                updated_at=datetime.now(timezone.utc).isoformat(),
+            )
+
+        log.debug(
+            "FR24 response for airport batch %s: %s flights",
+            ",".join(batch),
+            len(flights),
+        )
+        if flights:
+            log.info(
+                "FR24 sample flight data for airport batch %s: %s",
+                ",".join(batch),
+                json.dumps(flights[0], sort_keys=True, default=str),
+            )
+
+        match_map: dict[str, set[str]] = {}
+        for request_code in batch:
+            target = airport_targets.get(request_code)
+            if not target:
+                continue
+            for match_code in target["match_codes"]:
+                match_map.setdefault(match_code, set()).add(request_code)
+
+        flights_by_code: dict[str, list[dict]] = {code: [] for code in batch}
+        for flight in flights:
+            if not flight:
+                continue
+            dest_codes = _extract_destination_codes(flight)
+            matched = set()
+            for dest_code in dest_codes:
+                matched.update(match_map.get(dest_code, set()))
+            if not matched:
+                continue
+            for request_code in matched:
+                flights_by_code.setdefault(request_code, []).append(flight)
+
+        for request_code, matched_flights in flights_by_code.items():
+            if not matched_flights:
+                continue
+            target = airport_targets.get(request_code)
+            if not target:
+                continue
+            await _process_flights(
+                bot=bot,
+                db=db,
+                config=config,
+                channel_map=channel_map,
+                subscriptions=target["subs"],
+                flights=matched_flights,
+                sub_type="airport",
+                display_code=target["display_code"],
+                credits=credits,
+            )
+
+        if config.fr24_request_delay_seconds > 0:
+            await asyncio.sleep(config.fr24_request_delay_seconds)
+
+    for country_code in country_codes:
+        target = airport_targets.get(country_code)
+        if not target:
+            continue
+        log.debug(
+            "Polling FR24 for airport country inbound=%s (%s subs)",
+            country_code,
+            len(target["subs"]),
+        )
+        result = await fr24.fetch_by_airport_inbound(country_code)
+        if result.error:
+            if result.rate_limited:
+                if not rate_limit_notified:
+                    await _notify_poll_error(
+                        bot,
+                        channel_map,
+                        config.bot_owner_ids,
+                        {sub["guild_id"] for sub in target["subs"]},
+                        f"FR24 rate limit hit for airport country {country_code}. Backing off for 60s.",
+                    )
+                    rate_limit_notified = True
+                continue
+            await _notify_poll_error(
+                bot,
+                channel_map,
+                config.bot_owner_ids,
+                {sub["guild_id"] for sub in target["subs"]},
+                f"FR24 request failed for airport country {country_code}: {result.error}",
+            )
+            continue
+
+        flights = result.flights
+        credits = result.credits
+        if credits and (credits.remaining is not None or credits.consumed is not None):
+            await db.set_fr24_credits(
+                remaining=credits.remaining,
+                consumed=credits.consumed,
+                updated_at=datetime.now(timezone.utc).isoformat(),
+            )
+
+        log.debug(
+            "FR24 response for airport country %s: %s flights",
+            country_code,
+            len(flights),
+        )
+        if flights:
+            log.info(
+                "FR24 sample flight data for airport country %s: %s",
+                country_code,
+                json.dumps(flights[0], sort_keys=True, default=str),
+            )
+        await _process_flights(
+            bot=bot,
+            db=db,
+            config=config,
+            channel_map=channel_map,
+            subscriptions=target["subs"],
+            flights=flights,
+            sub_type="airport",
+            display_code=target["display_code"],
             credits=credits,
         )
 
@@ -187,6 +389,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
     return {
         "subscriptions": len(subs),
         "unique": unique_count,
+        "requests": total_requests,
         "estimated_min_seconds": estimated_min_seconds,
     }
 
@@ -224,6 +427,14 @@ def _build_flight_id(flight: dict) -> str | None:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def _has_registration(flight: dict) -> bool:
+    for key in ("registration", "reg"):
+        value = flight.get(key)
+        if value:
+            return True
+    return False
+
+
 async def _process_flights(
     bot,
     db,
@@ -244,6 +455,8 @@ async def _process_flights(
 
     for flight in flights:
         if not flight:
+            continue
+        if sub_type == "aircraft" and not _has_registration(flight):
             continue
         flight_id = _build_flight_id(flight)
         if not flight_id:

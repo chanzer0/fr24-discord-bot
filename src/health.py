@@ -6,11 +6,12 @@ async def run_startup_checks(bot, db, config) -> None:
     log = logging.getLogger(__name__)
     log.info("Startup checks: begin")
     log.info(
-        "Config: poll_interval=%s poll_jitter=%s fr24_request_delay=%s fr24_max_requests_per_min=%s retention_days=%s sqlite_path=%s fr24_web_base_url=%s skycards_api_base=%s skycards_client_version=%s",
+        "Config: poll_interval=%s poll_jitter=%s fr24_request_delay=%s fr24_max_requests_per_min=%s fr24_airport_batch_size=%s retention_days=%s sqlite_path=%s fr24_web_base_url=%s skycards_api_base=%s skycards_client_version=%s",
         config.poll_interval_seconds,
         config.poll_jitter_seconds,
         config.fr24_request_delay_seconds,
         config.fr24_max_requests_per_min,
+        config.fr24_airport_batch_size,
         config.notification_retention_days,
         config.sqlite_path,
         config.fr24_web_base_url,

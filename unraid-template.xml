@@ -30,6 +30,7 @@
   <Config Name="Poll Jitter Seconds" Target="POLL_JITTER_SECONDS" Default="5" Mode="" Description="Adds jitter to polling interval to avoid bursts" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="FR24 Request Delay Seconds" Target="FR24_REQUEST_DELAY_SECONDS" Default="0.2" Mode="" Description="Delay between FR24 requests in a poll cycle" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="FR24 Max Requests Per Min" Target="FR24_MAX_REQUESTS_PER_MIN" Default="10" Mode="" Description="Hard cap for FR24 requests per minute" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="FR24 Airport Batch Size" Target="FR24_AIRPORT_BATCH_SIZE" Default="5" Mode="" Description="Number of airport codes per FR24 request (max 15)" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="Notification Retention Days" Target="NOTIFICATION_RETENTION_DAYS" Default="7" Mode="" Description="Days to keep notification dedupe logs" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="FR24 Web Base URL" Target="FR24_WEB_BASE_URL" Default="https://www.flightradar24.com" Mode="" Description="Base URL for FR24 web links" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="Skycards API Base" Target="SKYCARDS_API_BASE" Default="https://api.skycards.oldapes.com" Mode="" Description="Base URL for Skycards reference data API" Type="Variable" Display="advanced" Required="false" Mask="false"/>

@@ -39,6 +39,7 @@ Before adding the repo as a template source, verify unraid-template.xml points a
 - POLL_JITTER_SECONDS
 - FR24_REQUEST_DELAY_SECONDS
 - FR24_MAX_REQUESTS_PER_MIN
+- FR24_AIRPORT_BATCH_SIZE
 - NOTIFICATION_RETENTION_DAYS
 - SQLITE_PATH
 - FR24_WEB_BASE_URL
