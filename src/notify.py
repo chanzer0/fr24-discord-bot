@@ -37,7 +37,13 @@ def _format_route(flight: dict) -> str | None:
     return None
 
 
-def build_embed(flight: dict, sub_type: str, code: str) -> discord.Embed:
+def build_embed(
+    flight: dict,
+    sub_type: str,
+    code: str,
+    credits_consumed: int | None = None,
+    credits_remaining: int | None = None,
+) -> discord.Embed:
     title = f"Aircraft match: {code}" if sub_type == "aircraft" else f"Inbound to {code}"
     callsign = _pick_first(flight, ["callsign", "flight_number", "flight"])
     description = callsign or "Flight update"
@@ -77,7 +83,15 @@ def build_embed(flight: dict, sub_type: str, code: str) -> discord.Embed:
     if lat and lon:
         embed.add_field(name="Position", value=f"{lat}, {lon}", inline=False)
 
-    embed.set_footer(text="Data source: Flightradar24")
+    footer_parts = ["Data source: Flightradar24"]
+    credit_parts = []
+    if credits_consumed is not None:
+        credit_parts.append(f"Credits used: {credits_consumed}")
+    if credits_remaining is not None:
+        credit_parts.append(f"Remaining: {credits_remaining}")
+    if credit_parts:
+        footer_parts.append(" | ".join(credit_parts))
+    embed.set_footer(text=" • ".join(footer_parts))
     return embed
 
 

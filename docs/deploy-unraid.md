@@ -50,7 +50,6 @@ Before adding the repo as a template source, verify unraid-template.xml points a
 2. Run /set-notify-channel as the bot owner.
 3. Run /refresh-reference all to populate autocomplete data.
 4. Test /subscribe aircraft A388 or /subscribe airport WAW.
-5. Use /usage to view cached FR24 credit usage (refreshed daily at 8:00 AM Eastern).
 
 ## Container terminal tips
 - You can open a terminal for the container in Unraid and run:

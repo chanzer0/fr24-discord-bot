@@ -11,7 +11,6 @@ from .fr24.client import Fr24Client
 from .health import run_startup_checks
 from .poller import cleanup_loop, poll_loop
 from .reference_data import ReferenceDataService
-from .usage import usage_loop
 
 
 class FlightBot(discord.Client):
@@ -32,7 +31,6 @@ class FlightBot(discord.Client):
         await run_startup_checks(self, self.db, self.config)
         self.loop.create_task(poll_loop(self, self.db, self.fr24, self.config))
         self.loop.create_task(cleanup_loop(self.db, self.config))
-        self.loop.create_task(usage_loop(self, self.db, self.fr24, self.config))
         await self.tree.sync()
 
     async def on_ready(self) -> None:

@@ -9,14 +9,12 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 - Skycards-powered autocomplete for airports/models with owner refresh
 - Background polling with dedupe and backoff-friendly pacing
 - SQLite persistence with daily cleanup of stale notification logs
-- Daily FR24 usage report broadcast and cached /usage command
 - Docker-friendly for Unraid deployments
 
 ## Commands
 - /set-notify-channel <channel> (owner-only)
 - /subscribe <aircraft|airport> <code>
 - /unsubscribe <aircraft|airport> <code>
-- /usage
 - /refresh-reference <airports|models|all> (owner-only)
 - /help
 
@@ -61,9 +59,8 @@ See docs/deploy-unraid.md for details.
 - Airport/model reference data is cached in SQLite for autocomplete.
 - Guild, channel, and user display names are stored alongside IDs for easier admin visibility.
 
-## Usage reporting
-- The bot fetches FR24 usage once daily at 8:00 AM Eastern and broadcasts it to all guild notify channels.
-- /usage returns cached usage details and refreshes if the cache is older than 5 minutes.
+## Credits visibility
+- Each FR24-powered notification includes the credits consumed and remaining from the API response headers.
 
 ## Logs and startup checks
 - On startup, the bot logs configuration (non-sensitive), DB counts, and intent/voice status.

@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from fr24sdk.client import Client
+
+
+@dataclass(frozen=True)
+class Fr24Credits:
+    consumed: int | None
+    remaining: int | None
+
+
+@dataclass(frozen=True)
+class Fr24Response:
+    flights: list[dict]
+    credits: Fr24Credits | None
 
 
 def _coerce_dict(item: Any) -> dict:
@@ -43,15 +55,33 @@ def _normalize_positions(result: Any) -> list[dict]:
     return [_coerce_dict(item) for item in items if item is not None]
 
 
-def _normalize_usage(result: Any) -> dict:
-    if result is None:
-        return {}
-    data = _coerce_dict(result)
-    if data:
-        return data
-    if hasattr(result, "data"):
-        return _coerce_dict(getattr(result, "data"))
-    return {}
+def _coerce_params(params: dict) -> dict:
+    coerced: dict[str, str] = {}
+    for key, value in params.items():
+        if value is None:
+            continue
+        if isinstance(value, list):
+            coerced[key] = ",".join(str(item) for item in value)
+        else:
+            coerced[key] = str(value)
+    return coerced
+
+
+def _parse_int(value: str | None) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _extract_credits(headers) -> Fr24Credits | None:
+    consumed = _parse_int(headers.get("x-fr24-credits-consumed"))
+    remaining = _parse_int(headers.get("x-fr24-credits-remaining"))
+    if consumed is None and remaining is None:
+        return None
+    return Fr24Credits(consumed=consumed, remaining=remaining)
 
 
 class Fr24Client:
@@ -59,35 +89,32 @@ class Fr24Client:
         self._api_token = api_token
         self._log = logging.getLogger(__name__)
 
-    async def fetch_by_aircraft(self, code: str) -> list[dict]:
+    async def fetch_by_aircraft(self, code: str) -> Fr24Response:
         return await self._call({"aircraft": code})
 
-    async def fetch_by_airport_inbound(self, code: str) -> list[dict]:
-        return await self._call({"airports": [f"inbound:{code}"]})
+    async def fetch_by_airport_inbound(self, code: str) -> Fr24Response:
+        return await self._call({"airports": f"inbound:{code}"})
 
-    async def fetch_usage(self) -> dict:
-        def _sync_call() -> Any:
+    async def _call(self, params: dict) -> Fr24Response:
+        def _sync_call() -> tuple[dict, Fr24Credits | None]:
             with Client(api_token=self._api_token) as client:
-                return client.usage.get()
-
-        try:
-            result = await asyncio.to_thread(_sync_call)
-        except Exception:
-            self._log.exception("FR24 usage request failed")
-            return {}
-        payload = _normalize_usage(result)
-        self._log.info("FR24 usage payload=%s", json.dumps(payload, sort_keys=True, default=str))
-        return payload
-
-    async def _call(self, params: dict) -> list[dict]:
-        def _sync_call() -> Any:
-            with Client(api_token=self._api_token) as client:
-                return client.live.flight_positions.get_full(**params)
+                response = client.transport.request(
+                    "GET",
+                    "/api/live/flight-positions/full",
+                    params=_coerce_params(params),
+                )
+                credits = _extract_credits(response.headers)
+                try:
+                    payload = response.json()
+                except ValueError:
+                    payload = {}
+                return payload, credits
 
         try:
             self._log.debug("FR24 request params=%s", params)
-            result = await asyncio.to_thread(_sync_call)
+            payload, credits = await asyncio.to_thread(_sync_call)
         except Exception:
             self._log.exception("FR24 request failed params=%s", params)
-            return []
-        return _normalize_positions(result)
+            return Fr24Response(flights=[], credits=None)
+        flights = _normalize_positions(payload)
+        return Fr24Response(flights=flights, credits=credits)

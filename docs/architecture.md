@@ -6,7 +6,6 @@
 - Poller: background task that groups subscriptions and queries FR24.
 - Reference data service: fetches airport/model data from Skycards and caches it for autocomplete.
 - SQLite storage: persists guild settings, subscriptions, and notification dedupe logs.
-- Usage reporter: daily FR24 usage fetch and cached broadcast.
 
 ## Data flow
 1. Bot owner runs /set-notify-channel to store the default channel for a guild.
@@ -14,8 +13,7 @@
 3. Poller reads all subscriptions, groups by code, and calls FR24.
 4. For each matching flight, the bot sends an embed to the guild's notify channel and tags the user.
 5. A dedupe log prevents repeated notifications for the same flight.
-6. A daily usage job fetches FR24 credits and broadcasts to each guild notify channel.
-7. The owner can run /refresh-reference to update airport/model data used for autocomplete.
+6. The owner can run /refresh-reference to update airport/model data used for autocomplete.
 
 ## Storage
 - SQLite file at SQLITE_PATH (default /data/bot.db).
@@ -23,7 +21,6 @@
   - guild_settings: one row per guild with notify channel ID, plus guild/channel names.
   - subscriptions: one row per user per (type, code), including user/guild display names.
   - notification_log: dedupe log to avoid repeat alerts.
-  - usage_cache: cached usage payload and timestamp.
   - reference_airports: ICAO/IATA and basic airport details used for autocomplete.
   - reference_models: ICAO and aircraft model details used for autocomplete.
   - reference_meta: metadata for the reference datasets.

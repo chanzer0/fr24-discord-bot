@@ -11,8 +11,7 @@
 - Configure POLL_INTERVAL_SECONDS and FR24_REQUEST_DELAY_SECONDS to match your plan limits.
 - If FR24 responses indicate throttling, increase the poll interval and request delay.
 - Always verify current plan limits in the FR24 API documentation.
-- The usage endpoint is called once per day at 8:00 AM Eastern and cached for /usage.
-- /usage refreshes the cache only if the last fetch is older than 30 minutes.
+- Each FR24 response includes credit headers; notifications display consumed/remaining credits.
 
 ## Pacing controls
 - POLL_INTERVAL_SECONDS: base poll cadence.

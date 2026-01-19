@@ -47,12 +47,6 @@ async def run_startup_checks(bot, db, config) -> None:
     if counts["guild_settings"] == 0:
         log.info("No notify channels set yet. Run /set-notify-channel in each guild.")
 
-    usage_cache = await db.get_usage_cache()
-    if usage_cache and usage_cache.get("fetched_at"):
-        log.info("Usage cache last fetched at: %s", usage_cache["fetched_at"])
-    else:
-        log.info("Usage cache is empty; next run is scheduled for 8:00 AM Eastern.")
-
     for dataset in ("airports", "models"):
         meta = await db.get_reference_meta(dataset)
         if meta:

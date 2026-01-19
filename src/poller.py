@@ -39,9 +39,11 @@ async def poll_once(bot, db, fr24, config) -> None:
     for (sub_type, code), entries in grouped.items():
         log.debug("Polling FR24 for %s %s (%s subs)", sub_type, code, len(entries))
         if sub_type == "aircraft":
-            flights = await fr24.fetch_by_aircraft(code)
+            result = await fr24.fetch_by_aircraft(code)
         else:
-            flights = await fr24.fetch_by_airport_inbound(code)
+            result = await fr24.fetch_by_airport_inbound(code)
+        flights = result.flights
+        credits = result.credits
 
         log.debug(
             "FR24 response for %s %s: %s flights", sub_type, code, len(flights)
@@ -55,6 +57,7 @@ async def poll_once(bot, db, fr24, config) -> None:
             flights=flights,
             sub_type=sub_type,
             code=code,
+            credits=credits,
         )
 
         if config.fr24_request_delay_seconds > 0:
@@ -105,6 +108,7 @@ async def _process_flights(
     flights: list[dict],
     sub_type: str,
     code: str,
+    credits,
 ) -> None:
     if not flights:
         return
@@ -130,12 +134,22 @@ async def _process_flights(
                 flight=flight,
                 sub_type=sub_type,
                 code=code,
+                credits=credits,
             )
             if sent:
                 await db.log_notification(sub["id"], flight_id)
 
 
-async def _send_notification(bot, config, channel_id: str, user_id: str, flight: dict, sub_type: str, code: str) -> bool:
+async def _send_notification(
+    bot,
+    config,
+    channel_id: str,
+    user_id: str,
+    flight: dict,
+    sub_type: str,
+    code: str,
+    credits,
+) -> bool:
     log = logging.getLogger(__name__)
     try:
         channel = bot.get_channel(int(channel_id))
@@ -145,7 +159,13 @@ async def _send_notification(bot, config, channel_id: str, user_id: str, flight:
         log.warning("Failed to resolve channel %s: %s", channel_id, exc)
         return False
 
-    embed = build_embed(flight, sub_type, code)
+    embed = build_embed(
+        flight,
+        sub_type,
+        code,
+        credits_consumed=getattr(credits, "consumed", None),
+        credits_remaining=getattr(credits, "remaining", None),
+    )
     url = build_fr24_link(flight, config.fr24_web_base_url)
     view = build_view(url)
 
