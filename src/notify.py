@@ -79,11 +79,8 @@ def build_embed(
         flight, ["flight", "flight_number", "flight_number_iata", "flight_number_icao"]
     )
     callsign = _pick_first(flight, ["callsign"])
-    description = flight_number or callsign or "Flight update"
-
     embed = discord.Embed(
         title=title,
-        description=description,
         color=discord.Color.blue(),
         timestamp=datetime.now(timezone.utc),
     )
