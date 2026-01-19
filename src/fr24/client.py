@@ -18,6 +18,7 @@ class Fr24Credits:
 class Fr24Response:
     flights: list[dict]
     credits: Fr24Credits | None
+    error: str | None
 
 
 def _coerce_dict(item: Any) -> dict:
@@ -113,8 +114,9 @@ class Fr24Client:
         try:
             self._log.debug("FR24 request params=%s", params)
             payload, credits = await asyncio.to_thread(_sync_call)
-        except Exception:
+        except Exception as exc:
             self._log.exception("FR24 request failed params=%s", params)
-            return Fr24Response(flights=[], credits=None)
+            error = f"{type(exc).__name__}: {exc}"
+            return Fr24Response(flights=[], credits=None, error=error)
         flights = _normalize_positions(payload)
-        return Fr24Response(flights=flights, credits=credits)
+        return Fr24Response(flights=flights, credits=credits, error=None)

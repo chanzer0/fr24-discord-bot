@@ -32,7 +32,7 @@ Before adding the repo as a template source, verify unraid-template.xml points a
 ## Required environment variables
 - DISCORD_TOKEN
 - FR24_API_KEY
-- BOT_OWNER_ID
+- BOT_OWNER_IDS
 
 ## Optional environment variables
 - POLL_INTERVAL_SECONDS

@@ -32,7 +32,7 @@ Requires Python 3.11+ (matches the Docker image).
 ## Environment variables
 - DISCORD_TOKEN
 - FR24_API_KEY
-- BOT_OWNER_ID (your Discord user ID)
+- BOT_OWNER_IDS (CSV of Discord user IDs)
 - POLL_INTERVAL_SECONDS (default 60)
 - POLL_JITTER_SECONDS (default 5)
 - FR24_REQUEST_DELAY_SECONDS (default 0.2)
@@ -65,6 +65,7 @@ See docs/deploy-unraid.md for details.
 ## Logs and startup checks
 - On startup, the bot logs configuration (non-sensitive), DB counts, and intent/voice status.
 - PyNaCl warnings only affect voice features, which are not used by this bot.
+- Poller errors are posted to each guild notify channel and tag the bot owner.
 
 ## Docs
 - docs/architecture.md

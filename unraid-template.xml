@@ -24,7 +24,7 @@
   <Config Name="AppData" Target="/data" Default="/mnt/user/appdata/fr24-discord-bot" Mode="rw" Description="Persistent data path for SQLite." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/fr24-discord-bot</Config>
   <Config Name="Discord Token" Target="DISCORD_TOKEN" Default="" Mode="" Description="Discord bot token" Type="Variable" Display="always" Required="true" Mask="true"/>
   <Config Name="FR24 API Key" Target="FR24_API_KEY" Default="" Mode="" Description="Flightradar24 API token" Type="Variable" Display="always" Required="true" Mask="true"/>
-  <Config Name="Bot Owner ID" Target="BOT_OWNER_ID" Default="" Mode="" Description="Discord user ID allowed to run /set-notify-channel" Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Bot Owner IDs" Target="BOT_OWNER_IDS" Default="" Mode="" Description="CSV of Discord user IDs allowed to run owner-only commands" Type="Variable" Display="always" Required="true" Mask="false"/>
   <Config Name="SQLite Path" Target="SQLITE_PATH" Default="/data/bot.db" Mode="" Description="SQLite database file path" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="Poll Interval Seconds" Target="POLL_INTERVAL_SECONDS" Default="60" Mode="" Description="Base polling interval in seconds" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="Poll Jitter Seconds" Target="POLL_JITTER_SECONDS" Default="5" Mode="" Description="Adds jitter to polling interval to avoid bursts" Type="Variable" Display="advanced" Required="false" Mask="false"/>

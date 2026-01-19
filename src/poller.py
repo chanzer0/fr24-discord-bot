@@ -18,8 +18,19 @@ async def poll_loop(bot, db, fr24, config) -> None:
     while True:
         try:
             await poll_once(bot, db, fr24, config)
-        except Exception:
+        except Exception as exc:
             log.exception("Poll loop failed")
+            try:
+                channel_map = await db.fetch_guild_channels()
+                await _notify_poll_error(
+                    bot,
+                    channel_map,
+                    config.bot_owner_ids,
+                    set(channel_map.keys()),
+                    f"Poll loop failed: {type(exc).__name__}: {exc}",
+                )
+            except Exception:
+                log.exception("Failed to send poller error notification")
         sleep_for = config.poll_interval_seconds + random.uniform(0, config.poll_jitter_seconds)
         await asyncio.sleep(sleep_for)
 
@@ -42,12 +53,20 @@ async def poll_once(bot, db, fr24, config) -> None:
             result = await fr24.fetch_by_aircraft(code)
         else:
             result = await fr24.fetch_by_airport_inbound(code)
+        if result.error:
+            await _notify_poll_error(
+                bot,
+                channel_map,
+                config.bot_owner_ids,
+                {sub["guild_id"] for sub in entries},
+                f"FR24 request failed for {sub_type} {code}: {result.error}",
+            )
+            continue
+
         flights = result.flights
         credits = result.credits
 
-        log.debug(
-            "FR24 response for %s %s: %s flights", sub_type, code, len(flights)
-        )
+        log.debug("FR24 response for %s %s: %s flights", sub_type, code, len(flights))
         if flights:
             log.info(
                 "FR24 sample flight data for %s %s: %s",
@@ -182,3 +201,38 @@ async def _send_notification(
         log.warning("Failed to send notification to channel %s: %s", channel_id, exc)
         return False
     return True
+
+
+
+
+async def _notify_poll_error(
+    bot,
+    channel_map: dict[str, str],
+    owner_ids: set[int],
+    guild_ids: set[str],
+    message: str,
+) -> None:
+    log = logging.getLogger(__name__)
+    if not guild_ids:
+        return
+    mentions = " ".join(f"<@{owner_id}>" for owner_id in sorted(owner_ids))
+    text = message.strip()
+    if len(text) > 900:
+        text = text[:897] + "..."
+    for guild_id in guild_ids:
+        channel_id = channel_map.get(guild_id)
+        if not channel_id:
+            continue
+        try:
+            channel = bot.get_channel(int(channel_id))
+            if channel is None:
+                channel = await bot.fetch_channel(int(channel_id))
+            content = f"{mentions} Poller error: {text}".strip()
+            await channel.send(content=content)
+        except (discord.Forbidden, discord.HTTPException, discord.NotFound) as exc:
+            log.warning(
+                "Failed to send poller error to guild %s channel %s: %s",
+                guild_id,
+                channel_id,
+                exc,
+            )

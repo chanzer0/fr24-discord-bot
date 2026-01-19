@@ -157,9 +157,9 @@ def register(tree, db, config) -> None:
                 "This command can only be used in a server.", ephemeral=True
             )
             return
-        if interaction.user.id != config.bot_owner_id:
+        if interaction.user.id not in config.bot_owner_ids:
             await interaction.response.send_message(
-                "Only the bot owner can set the notify channel.", ephemeral=True
+                "Only a bot owner can set the notify channel.", ephemeral=True
             )
             return
 

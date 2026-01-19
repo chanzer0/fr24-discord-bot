@@ -23,9 +23,9 @@ def register(tree, db, config, reference_data) -> None:
         interaction: discord.Interaction,
         dataset: app_commands.Choice[str],
     ) -> None:
-        if interaction.user.id != config.bot_owner_id:
+        if interaction.user.id not in config.bot_owner_ids:
             await interaction.response.send_message(
-                "Only the bot owner can refresh reference data.",
+                "Only a bot owner can refresh reference data.",
                 ephemeral=True,
             )
             return

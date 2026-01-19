@@ -3,7 +3,7 @@
 ## Components
 - Discord bot (discord.py): slash commands, validation, and notifications.
 - FR24 client (fr24sdk): fetches live flight positions.
-- Poller: background task that groups subscriptions and queries FR24.
+- Poller: background task that groups subscriptions and queries FR24 once per unique code.
 - Reference data service: fetches airport/model data from Skycards and caches it for autocomplete.
 - SQLite storage: persists guild settings, subscriptions, and notification dedupe logs.
 
