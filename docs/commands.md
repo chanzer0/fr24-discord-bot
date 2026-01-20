@@ -43,6 +43,13 @@ Notes:
 ## /credits-remaining
 Show the latest cached FR24 credits remaining value (updated after each FR24 API call).
 
+## /logs
+Owner-only command to view recent log lines.
+
+Example:
+- /logs 50
+- /logs 100 contains:rate limit
+
 ## /start
 Owner-only command to start the FR24 polling loop.
 

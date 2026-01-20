@@ -1,6 +1,7 @@
 # Ops and Admin CLI
 
-This repository includes a lightweight admin CLI that you can run inside the container terminal to inspect the SQLite database.
+This repository includes a lightweight admin CLI that you can run inside the container terminal to inspect the SQLite database and log output.
+Logs are written to LOG_DIR (default /data/logs) with hourly rotation and 24-hour retention by default.
 Poller errors are posted to each guild notify channel tagging the bot owner.
 
 ## How to run
@@ -54,6 +55,15 @@ Deletes notification log entries older than N days.
 
 ```bash
 python -m src.admin clear-notifications --older-than-days 7
+```
+
+### logs
+Tail recent log output from the rotated log files.
+
+```bash
+python -m src.admin logs
+python -m src.admin logs --tail 100
+python -m src.admin logs --contains rate limit
 ```
 
 ### remove-subs

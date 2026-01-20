@@ -45,6 +45,8 @@ Before adding the repo as a template source, verify unraid-template.xml points a
 - FR24_WEB_BASE_URL
 - SKYCARDS_API_BASE
 - SKYCARDS_CLIENT_VERSION
+- LOG_DIR
+- LOG_RETENTION_HOURS
 - LOG_LEVEL
 
 ## Initial bot setup

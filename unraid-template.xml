@@ -35,5 +35,7 @@
   <Config Name="FR24 Web Base URL" Target="FR24_WEB_BASE_URL" Default="https://www.flightradar24.com" Mode="" Description="Base URL for FR24 web links" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="Skycards API Base" Target="SKYCARDS_API_BASE" Default="https://api.skycards.oldapes.com" Mode="" Description="Base URL for Skycards reference data API" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="Skycards Client Version" Target="SKYCARDS_CLIENT_VERSION" Default="2.0.18" Mode="" Description="Skycards client version header value" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Log Dir" Target="LOG_DIR" Default="/data/logs" Mode="" Description="Directory for rotated log files" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Log Retention Hours" Target="LOG_RETENTION_HOURS" Default="24" Mode="" Description="Hours of log retention (hourly rotation)" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="Log Level" Target="LOG_LEVEL" Default="INFO" Mode="" Description="Logging level (DEBUG, INFO, WARNING, ERROR)" Type="Variable" Display="advanced" Required="false" Mask="false"/>
 </Container>

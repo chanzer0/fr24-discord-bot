@@ -73,6 +73,8 @@ class Config:
     fr24_web_base_url: str
     skycards_api_base: str
     skycards_client_version: str
+    log_dir: str
+    log_retention_hours: int
     log_level: str
 
 
@@ -95,5 +97,7 @@ def load_config() -> Config:
             "SKYCARDS_API_BASE", "https://api.skycards.oldapes.com"
         ),
         skycards_client_version=os.getenv("SKYCARDS_CLIENT_VERSION", "2.0.18"),
+        log_dir=os.getenv("LOG_DIR", "/data/logs"),
+        log_retention_hours=_int_env("LOG_RETENTION_HOURS", 24),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )

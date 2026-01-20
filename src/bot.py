@@ -1,4 +1,6 @@
 import logging
+import os
+from logging.handlers import TimedRotatingFileHandler
 
 import discord
 from discord import app_commands
@@ -12,6 +14,33 @@ from .health import run_startup_checks
 from .poller import cleanup_loop, poll_loop
 from .poller_state import PollerState
 from .reference_data import ReferenceDataService
+
+
+def _configure_file_logging(config) -> None:
+    log = logging.getLogger(__name__)
+    if not config.log_dir:
+        return
+    try:
+        os.makedirs(config.log_dir, exist_ok=True)
+        log_path = os.path.join(config.log_dir, "bot.log")
+        handler = TimedRotatingFileHandler(
+            log_path,
+            when="H",
+            interval=1,
+            backupCount=max(1, config.log_retention_hours),
+            utc=True,
+        )
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        )
+        logging.getLogger().addHandler(handler)
+        log.info(
+            "File logging enabled: %s (retention_hours=%s)",
+            log_path,
+            config.log_retention_hours,
+        )
+    except Exception:
+        log.exception("Failed to configure file logging")
 
 
 class FlightBot(discord.Client):
@@ -87,6 +116,7 @@ def main() -> None:
     )
     for logger_name in ("httpx", "fr24sdk", "fr24sdk.client", "fr24sdk.transport"):
         logging.getLogger(logger_name).setLevel(logging.WARNING)
+    _configure_file_logging(config)
 
     db = Database(config.sqlite_path)
     fr24 = Fr24Client(config.fr24_api_key, config.fr24_max_requests_per_min)

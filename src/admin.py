@@ -15,6 +15,10 @@ def _default_db_path() -> str:
     return os.getenv("SQLITE_PATH", "/data/bot.db")
 
 
+def _default_log_dir() -> str:
+    return os.getenv("LOG_DIR", "/data/logs")
+
+
 def _print_rows(rows: list[sqlite3.Row], columns: list[str]) -> None:
     if not rows:
         print("No results.")
@@ -319,6 +323,20 @@ def cmd_clear_notifications(conn: sqlite3.Connection, args: argparse.Namespace) 
     print(f"Deleted {cur.rowcount} notification_log rows older than {args.older_than_days} days.")
 
 
+def cmd_logs(args: argparse.Namespace) -> None:
+    from .logs import read_log_tail
+
+    lines = read_log_tail(
+        args.log_dir,
+        lines=args.tail,
+        contains=args.contains,
+    )
+    if not lines:
+        print("No logs found.")
+        return
+    print("\n".join(lines))
+
+
 def cmd_remove_subs(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
     ids = sorted(set(args.ids))
     if not ids:
@@ -389,6 +407,7 @@ def cmd_export_subs(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="FR24 Discord bot admin CLI")
     parser.add_argument("--db", default=_default_db_path(), help="Path to SQLite DB")
+    parser.add_argument("--log-dir", default=_default_log_dir(), help="Log directory")
     parser.add_argument(
         "--skycards-api-base",
         default=os.getenv("SKYCARDS_API_BASE", "https://api.skycards.oldapes.com"),
@@ -417,6 +436,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     clear = sub.add_parser("clear-notifications", help="Delete old notification logs")
     clear.add_argument("--older-than-days", type=int, default=7)
+
+    logs = sub.add_parser("logs", help="Tail log output")
+    logs.add_argument("--tail", type=int, default=200, help="Lines to show")
+    logs.add_argument("--contains", help="Filter lines by substring")
 
     remove_subs = sub.add_parser("remove-subs", help="Remove subscriptions by ID")
     remove_subs.add_argument("ids", nargs="+", type=int, help="Subscription IDs to delete")
@@ -451,6 +474,8 @@ def main() -> None:
             cmd_recent(conn, args)
         elif args.command == "clear-notifications":
             cmd_clear_notifications(conn, args)
+        elif args.command == "logs":
+            cmd_logs(args)
         elif args.command == "remove-subs":
             cmd_remove_subs(conn, args)
         elif args.command == "export-subs":

@@ -19,6 +19,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 - /my-subs
 - /refresh-reference <airports|models|all> (owner-only)
 - /credits-remaining
+- /logs (owner-only)
 - /start (owner-only)
 - /stop (owner-only)
 - /set-polling-interval <seconds> (owner-only)
@@ -49,6 +50,8 @@ Requires Python 3.11+ (matches the Docker image).
 - FR24_WEB_BASE_URL (default https://www.flightradar24.com)
 - SKYCARDS_API_BASE (default https://api.skycards.oldapes.com)
 - SKYCARDS_CLIENT_VERSION (default 2.0.18)
+- LOG_DIR (default /data/logs)
+- LOG_RETENTION_HOURS (default 24)
 - LOG_LEVEL (default INFO)
 
 ## Docker (local)
@@ -75,6 +78,8 @@ See docs/deploy-unraid.md for details.
 - On startup, the bot logs configuration (non-sensitive), DB counts, and intent/voice status.
 - PyNaCl warnings only affect voice features, which are not used by this bot.
 - Poller errors are posted to each guild notify channel and tag the bot owner.
+- Logs are written to LOG_DIR with hourly rotation and 24-hour retention by default.
+- Owners can view recent logs with /logs or `python -m src.admin logs`.
 
 ## Docs
 - docs/architecture.md

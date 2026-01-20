@@ -14,6 +14,7 @@ def register(tree, db, config) -> None:
             "Owner-only commands:\n"
             "- /set-notify-channel <channel>\n"
             "- /refresh-reference <airports|models|all>\n"
+            "- /logs\n"
             "- /start\n"
             "- /stop\n"
             "- /set-polling-interval <seconds>"
