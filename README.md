@@ -7,6 +7,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 - Subscribe/unsubscribe to inbound airport codes (IATA preferred, e.g., WAW or EPWA)
 - Owner-only default notification channel per guild via /set-notify-channel
 - Skycards-powered autocomplete for airports/models with owner refresh
+- /info command returns full airport/aircraft reference records
 - Background polling with dedupe and backoff-friendly pacing
 - Per-guild notifications tag all subscribers for the same ICAO in a single message (mentions truncated if needed)
 - SQLite persistence with daily cleanup of stale notification logs
@@ -19,6 +20,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 - /my-subs
 - /refresh-reference <airports|models|all> (owner-only)
 - /credits-remaining
+- /info <aircraft|airport> <code>
 - /logs (owner-only)
 - /start (owner-only)
 - /stop (owner-only)

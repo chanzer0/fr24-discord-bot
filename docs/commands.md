@@ -43,6 +43,17 @@ Notes:
 ## /credits-remaining
 Show the latest cached FR24 credits remaining value (updated after each FR24 API call).
 
+## /info
+Show reference data for an airport or aircraft. The response includes a JSON attachment
+with the full record plus a small inline preview.
+
+Examples:
+- /info airport RAE
+- /info aircraft A388
+
+Note:
+- Run /refresh-reference to load the latest reference data if records are missing.
+
 ## /logs
 Owner-only command to view recent log lines.
 

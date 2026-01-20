@@ -1,4 +1,5 @@
 from .help import register as register_help
+from .info import register as register_info
 from .logs import register as register_logs
 from .credits_remaining import register as register_credits_remaining
 from .my_subs import register as register_my_subs
@@ -17,5 +18,6 @@ def setup_commands(tree, db, config, fr24, reference_data, poller_state) -> None
     register_credits_remaining(tree, db, config)
     register_my_subs(tree, db, config, reference_data)
     register_polling(tree, db, config, poller_state)
+    register_info(tree, db, config, reference_data)
     register_logs(tree, db, config)
     register_help(tree, db, config)

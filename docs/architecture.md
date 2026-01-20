@@ -23,8 +23,8 @@
   - notification_log: dedupe log to avoid repeat alerts.
   - fr24_credits: latest credits remaining/consumed from FR24 response headers.
   - bot_settings: global bot settings like polling interval and enabled state.
-  - reference_airports: ICAO/IATA and basic airport details used for autocomplete.
-  - reference_models: ICAO and aircraft model details used for autocomplete.
+  - reference_airports: ICAO/IATA and airport details used for autocomplete and /info.
+  - reference_models: ICAO and aircraft model details used for autocomplete and /info.
   - reference_meta: metadata for the reference datasets.
 - WAL mode and busy timeout are enabled for stability on Unraid.
 
@@ -38,3 +38,4 @@
 ## Observability
 - Startup checks log non-sensitive config, DB counts, and capability status.
 - Poller logs cycle completion and cleanup logs pruned rows.
+- Logs are written to rotating files in LOG_DIR for quick review.

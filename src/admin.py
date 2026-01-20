@@ -62,22 +62,26 @@ def _ensure_reference_tables(conn: sqlite3.Connection) -> None:
             place_code TEXT,
             lat REAL,
             lon REAL,
-            alt REAL
+            alt REAL,
+            raw_json TEXT
         )
         '''
     )
     _ensure_column(conn, "reference_airports", "lat", "REAL")
     _ensure_column(conn, "reference_airports", "lon", "REAL")
     _ensure_column(conn, "reference_airports", "alt", "REAL")
+    _ensure_column(conn, "reference_airports", "raw_json", "TEXT")
     conn.execute(
         '''
         CREATE TABLE IF NOT EXISTS reference_models (
             icao TEXT PRIMARY KEY,
             manufacturer TEXT,
-            name TEXT NOT NULL
+            name TEXT NOT NULL,
+            raw_json TEXT
         )
         '''
     )
+    _ensure_column(conn, "reference_models", "raw_json", "TEXT")
     conn.execute(
         '''
         CREATE TABLE IF NOT EXISTS reference_meta (
@@ -191,8 +195,8 @@ def cmd_refresh_reference(conn: sqlite3.Connection, args: argparse.Namespace) ->
             conn.execute("DELETE FROM reference_airports")
             conn.executemany(
                 '''
-                INSERT INTO reference_airports (icao, iata, name, city, place_code, lat, lon, alt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO reference_airports (icao, iata, name, city, place_code, lat, lon, alt, raw_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 [
                     (
@@ -204,6 +208,7 @@ def cmd_refresh_reference(conn: sqlite3.Connection, args: argparse.Namespace) ->
                         row.get("lat"),
                         row.get("lon"),
                         row.get("alt"),
+                        row.get("raw_json"),
                     )
                     for row in rows
                 ],
@@ -214,14 +219,15 @@ def cmd_refresh_reference(conn: sqlite3.Connection, args: argparse.Namespace) ->
             conn.execute("DELETE FROM reference_models")
             conn.executemany(
                 '''
-                INSERT INTO reference_models (icao, manufacturer, name)
-                VALUES (?, ?, ?)
+                INSERT INTO reference_models (icao, manufacturer, name, raw_json)
+                VALUES (?, ?, ?, ?)
                 ''',
                 [
                     (
                         row.get("icao"),
                         row.get("manufacturer"),
                         row.get("name"),
+                        row.get("raw_json"),
                     )
                     for row in rows
                 ],

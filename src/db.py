@@ -75,7 +75,8 @@ CREATE TABLE IF NOT EXISTS reference_airports (
     place_code TEXT,
     lat REAL,
     lon REAL,
-    alt REAL
+    alt REAL,
+    raw_json TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_reference_airports_iata
@@ -84,7 +85,8 @@ CREATE INDEX IF NOT EXISTS idx_reference_airports_iata
 CREATE TABLE IF NOT EXISTS reference_models (
     icao TEXT PRIMARY KEY,
     manufacturer TEXT,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    raw_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS reference_meta (
@@ -143,6 +145,13 @@ class Database:
                 "lat": "REAL",
                 "lon": "REAL",
                 "alt": "REAL",
+                "raw_json": "TEXT",
+            },
+        )
+        await self._ensure_table_columns(
+            "reference_models",
+            {
+                "raw_json": "TEXT",
             },
         )
         await self._conn.commit()
@@ -520,6 +529,39 @@ class Database:
             rows = await cur.fetchall()
         return [dict(row) for row in rows]
 
+    async def get_reference_airport_record(self, code: str) -> dict | None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        value = code.strip().upper()
+        if len(value) == 3:
+            query = "SELECT raw_json FROM reference_airports WHERE iata = ?"
+        else:
+            query = "SELECT raw_json FROM reference_airports WHERE icao = ?"
+        async with self._conn.execute(query, (value,)) as cur:
+            row = await cur.fetchone()
+        if not row or row["raw_json"] is None:
+            return None
+        try:
+            return json.loads(row["raw_json"])
+        except json.JSONDecodeError:
+            return None
+
+    async def get_reference_model_record(self, code: str) -> dict | None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        value = code.strip().upper()
+        async with self._conn.execute(
+            "SELECT raw_json FROM reference_models WHERE icao = ?",
+            (value,),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row or row["raw_json"] is None:
+            return None
+        try:
+            return json.loads(row["raw_json"])
+        except json.JSONDecodeError:
+            return None
+
     async def get_reference_meta(self, dataset: str) -> dict | None:
         if not self._conn:
             raise RuntimeError("Database not connected")
@@ -543,8 +585,8 @@ class Database:
         await self._conn.execute("DELETE FROM reference_airports")
         await self._conn.executemany(
             '''
-            INSERT INTO reference_airports (icao, iata, name, city, place_code, lat, lon, alt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO reference_airports (icao, iata, name, city, place_code, lat, lon, alt, raw_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             [
                 (
@@ -556,6 +598,7 @@ class Database:
                     row.get("lat"),
                     row.get("lon"),
                     row.get("alt"),
+                    row.get("raw_json"),
                 )
                 for row in rows
             ],
@@ -582,14 +625,15 @@ class Database:
         await self._conn.execute("DELETE FROM reference_models")
         await self._conn.executemany(
             '''
-            INSERT INTO reference_models (icao, manufacturer, name)
-            VALUES (?, ?, ?)
+            INSERT INTO reference_models (icao, manufacturer, name, raw_json)
+            VALUES (?, ?, ?, ?)
             ''',
             [
                 (
                     row.get("icao"),
                     row.get("manufacturer"),
                     row.get("name"),
+                    row.get("raw_json"),
                 )
                 for row in rows
             ],

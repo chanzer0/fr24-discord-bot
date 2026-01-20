@@ -10,6 +10,7 @@ def register(tree, db, config) -> None:
             "- /unsubscribe <aircraft|airport> <code>\n"
             "- /my-subs\n"
             "- /credits-remaining\n"
+            "- /info <aircraft|airport> <code>\n"
             "- /help\n\n"
             "Owner-only commands:\n"
             "- /set-notify-channel <channel>\n"

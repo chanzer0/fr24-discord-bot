@@ -166,6 +166,7 @@ def parse_airports_payload(payload: dict) -> tuple[str | None, list[dict]]:
                 "lat": ref.lat,
                 "lon": ref.lon,
                 "alt": ref.alt,
+                "raw_json": json.dumps(row, sort_keys=True, default=str),
             }
         )
     return str(updated_at) if updated_at is not None else None, rows
@@ -188,6 +189,7 @@ def parse_models_payload(payload: dict) -> tuple[str | None, list[dict]]:
                 "icao": ref.icao,
                 "manufacturer": ref.manufacturer,
                 "name": ref.name,
+                "raw_json": json.dumps(row, sort_keys=True, default=str),
             }
         )
     return str(updated_at) if updated_at is not None else None, rows
