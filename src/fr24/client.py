@@ -104,8 +104,8 @@ class Fr24Client:
     async def fetch_by_airports_inbound(self, codes: list[str]) -> Fr24Response:
         if not codes:
             return Fr24Response(flights=[], credits=None, error=None, rate_limited=False)
-        joined = ",".join(codes)
-        return await self._call({"airports": f"inbound:{joined}"})
+        parts = [f"inbound:{code}" for code in codes]
+        return await self._call({"airports": ",".join(parts)})
 
     async def _call(self, params: dict) -> Fr24Response:
         await self._rate_limiter.wait()
