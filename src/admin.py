@@ -59,10 +59,16 @@ def _ensure_reference_tables(conn: sqlite3.Connection) -> None:
             iata TEXT,
             name TEXT NOT NULL,
             city TEXT,
-            place_code TEXT
+            place_code TEXT,
+            lat REAL,
+            lon REAL,
+            alt REAL
         )
         '''
     )
+    _ensure_column(conn, "reference_airports", "lat", "REAL")
+    _ensure_column(conn, "reference_airports", "lon", "REAL")
+    _ensure_column(conn, "reference_airports", "alt", "REAL")
     conn.execute(
         '''
         CREATE TABLE IF NOT EXISTS reference_models (
@@ -185,8 +191,8 @@ def cmd_refresh_reference(conn: sqlite3.Connection, args: argparse.Namespace) ->
             conn.execute("DELETE FROM reference_airports")
             conn.executemany(
                 '''
-                INSERT INTO reference_airports (icao, iata, name, city, place_code)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO reference_airports (icao, iata, name, city, place_code, lat, lon, alt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 [
                     (
@@ -195,6 +201,9 @@ def cmd_refresh_reference(conn: sqlite3.Connection, args: argparse.Namespace) ->
                         row.get("name"),
                         row.get("city"),
                         row.get("place_code"),
+                        row.get("lat"),
+                        row.get("lon"),
+                        row.get("alt"),
                     )
                     for row in rows
                 ],

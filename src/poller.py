@@ -8,6 +8,7 @@ import random
 import time
 from datetime import datetime, timedelta, timezone
 from math import ceil
+from math import asin, cos, radians, sin, sqrt
 
 import discord
 
@@ -63,6 +64,138 @@ def _extract_destination_codes(flight: dict) -> set[str]:
         if code:
             codes.add(code)
     return codes
+
+
+def _extract_origin_codes(flight: dict) -> set[str]:
+    keys = (
+        "orig_iata",
+        "origin_iata",
+        "orig_icao",
+        "origin_icao",
+        "origin",
+        "orig",
+    )
+    codes = set()
+    for key in keys:
+        value = flight.get(key)
+        if not value:
+            continue
+        code = str(value).strip().upper()
+        if code:
+            codes.add(code)
+    return codes
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius_km = 6371.0
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    lat1_rad = radians(lat1)
+    lat2_rad = radians(lat2)
+    a = sin(dlat / 2) ** 2 + cos(lat1_rad) * cos(lat2_rad) * sin(dlon / 2) ** 2
+    c = 2 * asin(min(1.0, sqrt(a)))
+    return radius_km * c
+
+
+def _parse_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _get_first_numeric(flight: dict, keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        value = _parse_float(flight.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _get_flight_position(flight: dict) -> tuple[float, float] | None:
+    lat = _parse_float(flight.get("lat"))
+    lon = _parse_float(flight.get("lon"))
+    if lat is None or lon is None:
+        return None
+    return lat, lon
+
+
+def _is_on_ground_like(flight: dict) -> bool:
+    altitude = _get_first_numeric(flight, ("altitude", "altitude_ft", "alt"))
+    speed = _get_first_numeric(flight, ("ground_speed", "speed", "speed_kts", "gspeed"))
+    if altitude is None or speed is None:
+        return False
+    if altitude > 200 or speed > 30:
+        return False
+    vspeed = _get_first_numeric(flight, ("vspeed", "vertical_speed", "vertical_speed_fpm"))
+    if vspeed is not None and abs(vspeed) > 200:
+        return False
+    return True
+
+
+async def _resolve_airport_from_codes(codes: set[str], reference_data):
+    for code in codes:
+        if len(code) == 3:
+            ref = await reference_data.get_airport_by_iata(code)
+        elif len(code) == 4:
+            ref = await reference_data.get_airport(code)
+        else:
+            ref = None
+        if ref:
+            return ref
+    return None
+
+
+def _parse_eta(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _extract_eta(flight: dict) -> datetime | None:
+    for key in ("eta", "estimated_arrival", "eta_utc"):
+        parsed = _parse_eta(flight.get(key))
+        if parsed:
+            return parsed
+    return None
+
+
+async def _is_airport_alert_eligible(flight: dict, reference_data) -> bool:
+    dest_codes = _extract_destination_codes(flight)
+    origin_codes = _extract_origin_codes(flight)
+    if dest_codes and origin_codes and dest_codes.intersection(origin_codes):
+        return True
+
+    dest_ref = await _resolve_airport_from_codes(dest_codes, reference_data)
+    origin_ref = await _resolve_airport_from_codes(origin_codes, reference_data)
+    if dest_ref and origin_ref and dest_ref.icao == origin_ref.icao:
+        return True
+
+    if not _is_on_ground_like(flight):
+        return True
+    position = _get_flight_position(flight)
+    if not position or not dest_ref or dest_ref.lat is None or dest_ref.lon is None:
+        return True
+
+    distance_km = _haversine_km(position[0], position[1], dest_ref.lat, dest_ref.lon)
+    if distance_km > 10.0:
+        return True
+
+    eta = _extract_eta(flight)
+    if eta:
+        now = datetime.now(timezone.utc)
+        if (eta - now).total_seconds() >= 30 * 60:
+            return True
+
+    return False
 
 async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None:
     log = logging.getLogger(__name__)
@@ -221,6 +354,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             flights=flights,
             sub_type="aircraft",
             display_code=aircraft_code,
+            reference_data=reference_data,
             credits=credits,
         )
 
@@ -314,6 +448,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 flights=matched_flights,
                 sub_type="airport",
                 display_code=target["display_code"],
+                reference_data=reference_data,
                 credits=credits,
             )
 
@@ -380,6 +515,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             flights=flights,
             sub_type="airport",
             display_code=target["display_code"],
+            reference_data=reference_data,
             credits=credits,
         )
 
@@ -435,33 +571,6 @@ def _has_registration(flight: dict) -> bool:
     return False
 
 
-def _parse_float(value) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _get_first_numeric(flight: dict, keys: tuple[str, ...]) -> float | None:
-    for key in keys:
-        value = _parse_float(flight.get(key))
-        if value is not None:
-            return value
-    return None
-
-
-def _is_airport_alert_eligible(flight: dict) -> bool:
-    altitude = _get_first_numeric(flight, ("altitude", "altitude_ft", "alt"))
-    if altitude is not None and altitude <= 0:
-        return False
-    speed = _get_first_numeric(flight, ("ground_speed", "speed", "speed_kts", "gspeed"))
-    if speed is not None and speed <= 0:
-        return False
-    return True
-
-
 async def _process_flights(
     bot,
     db,
@@ -471,6 +580,7 @@ async def _process_flights(
     flights: list[dict],
     sub_type: str,
     display_code: str,
+    reference_data,
     credits,
 ) -> None:
     if not flights:
@@ -485,7 +595,7 @@ async def _process_flights(
             continue
         if sub_type == "aircraft" and not _has_registration(flight):
             continue
-        if sub_type == "airport" and not _is_airport_alert_eligible(flight):
+        if sub_type == "airport" and not await _is_airport_alert_eligible(flight, reference_data):
             continue
         flight_id = _build_flight_id(flight)
         if not flight_id:

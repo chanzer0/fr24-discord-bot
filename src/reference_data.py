@@ -20,6 +20,9 @@ class AirportRef:
     name: str
     city: str
     place_code: str
+    lat: float | None
+    lon: float | None
+    alt: float | None
     search_key: str
 
 
@@ -39,6 +42,15 @@ def _normalize_code(value: str | None) -> str:
     return (value or "").strip().upper()
 
 
+def _normalize_float(value) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _build_airport_ref(row: dict) -> AirportRef | None:
     icao = _normalize_code(row.get("icao"))
     if not icao:
@@ -47,6 +59,9 @@ def _build_airport_ref(row: dict) -> AirportRef | None:
     name = _normalize_text(row.get("name"))
     city = _normalize_text(row.get("city"))
     place_code = _normalize_code(row.get("place_code") or row.get("placeCode"))
+    lat = _normalize_float(row.get("lat"))
+    lon = _normalize_float(row.get("lon"))
+    alt = _normalize_float(row.get("alt"))
     search_key = " ".join(
         part
         for part in (
@@ -64,6 +79,9 @@ def _build_airport_ref(row: dict) -> AirportRef | None:
         name=name,
         city=city,
         place_code=place_code,
+        lat=lat,
+        lon=lon,
+        alt=alt,
         search_key=search_key,
     )
 
@@ -145,6 +163,9 @@ def parse_airports_payload(payload: dict) -> tuple[str | None, list[dict]]:
                 "name": ref.name,
                 "city": ref.city,
                 "place_code": ref.place_code,
+                "lat": ref.lat,
+                "lon": ref.lon,
+                "alt": ref.alt,
             }
         )
     return str(updated_at) if updated_at is not None else None, rows

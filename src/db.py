@@ -72,7 +72,10 @@ CREATE TABLE IF NOT EXISTS reference_airports (
     iata TEXT,
     name TEXT NOT NULL,
     city TEXT,
-    place_code TEXT
+    place_code TEXT,
+    lat REAL,
+    lon REAL,
+    alt REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_reference_airports_iata
@@ -132,6 +135,14 @@ class Database:
             {
                 "guild_name": "TEXT",
                 "user_name": "TEXT",
+            },
+        )
+        await self._ensure_table_columns(
+            "reference_airports",
+            {
+                "lat": "REAL",
+                "lon": "REAL",
+                "alt": "REAL",
             },
         )
         await self._conn.commit()
@@ -488,7 +499,7 @@ class Database:
             raise RuntimeError("Database not connected")
         async with self._conn.execute(
             '''
-            SELECT icao, iata, name, city, place_code
+            SELECT icao, iata, name, city, place_code, lat, lon, alt
             FROM reference_airports
             ORDER BY icao
             '''
@@ -532,8 +543,8 @@ class Database:
         await self._conn.execute("DELETE FROM reference_airports")
         await self._conn.executemany(
             '''
-            INSERT INTO reference_airports (icao, iata, name, city, place_code)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO reference_airports (icao, iata, name, city, place_code, lat, lon, alt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             [
                 (
@@ -542,6 +553,9 @@ class Database:
                     row.get("name"),
                     row.get("city"),
                     row.get("place_code"),
+                    row.get("lat"),
+                    row.get("lon"),
+                    row.get("alt"),
                 )
                 for row in rows
             ],
