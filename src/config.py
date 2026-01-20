@@ -83,13 +83,17 @@ def load_config() -> Config:
         bot_owner_ids=_parse_owner_ids(),
         poll_interval_seconds=_int_env("POLL_INTERVAL_SECONDS", 300),
         poll_jitter_seconds=_int_env("POLL_JITTER_SECONDS", 5),
-        fr24_request_delay_seconds=_float_env("FR24_REQUEST_DELAY_SECONDS", 0.2),
+        fr24_request_delay_seconds=_float_env("FR24_REQUEST_DELAY_SECONDS", 0.5),
         fr24_max_requests_per_min=max(1, _int_env("FR24_MAX_REQUESTS_PER_MIN", 10)),
         fr24_airport_batch_size=min(15, max(1, _int_env("FR24_AIRPORT_BATCH_SIZE", 5))),
         notification_retention_days=_int_env("NOTIFICATION_RETENTION_DAYS", 7),
         sqlite_path=os.getenv("SQLITE_PATH", "/data/bot.db"),
-        fr24_web_base_url=os.getenv("FR24_WEB_BASE_URL", "https://www.flightradar24.com"),
-        skycards_api_base=os.getenv("SKYCARDS_API_BASE", "https://api.skycards.oldapes.com"),
+        fr24_web_base_url=os.getenv(
+            "FR24_WEB_BASE_URL", "https://www.flightradar24.com"
+        ),
+        skycards_api_base=os.getenv(
+            "SKYCARDS_API_BASE", "https://api.skycards.oldapes.com"
+        ),
         skycards_client_version=os.getenv("SKYCARDS_CLIENT_VERSION", "2.0.18"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )

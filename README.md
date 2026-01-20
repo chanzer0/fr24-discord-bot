@@ -41,7 +41,7 @@ Requires Python 3.11+ (matches the Docker image).
 - BOT_OWNER_IDS (CSV of Discord user IDs)
 - POLL_INTERVAL_SECONDS (default 300)
 - POLL_JITTER_SECONDS (default 5)
-- FR24_REQUEST_DELAY_SECONDS (default 0.2)
+- FR24_REQUEST_DELAY_SECONDS (default 0.5)
 - FR24_MAX_REQUESTS_PER_MIN (default 10)
 - FR24_AIRPORT_BATCH_SIZE (default 5, max 15)
 - NOTIFICATION_RETENTION_DAYS (default 7)

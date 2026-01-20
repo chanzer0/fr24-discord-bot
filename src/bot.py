@@ -72,6 +72,7 @@ class FlightBot(discord.Client):
         log.info("Guilds connected: %s", len(self.guilds))
 
     async def close(self) -> None:
+        await self.fr24.close()
         await super().close()
         await self.db.close()
 

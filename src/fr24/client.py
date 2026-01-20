@@ -94,6 +94,7 @@ class Fr24Client:
         self._api_token = api_token
         self._log = logging.getLogger(__name__)
         self._rate_limiter = _RateLimiter(max_requests_per_min)
+        self._client: Client | None = None
 
     async def fetch_by_aircraft(self, code: str) -> Fr24Response:
         return await self._call({"aircraft": code})
@@ -109,20 +110,20 @@ class Fr24Client:
 
     async def _call(self, params: dict) -> Fr24Response:
         await self._rate_limiter.wait()
+        client = await self._ensure_client()
 
         def _sync_call() -> tuple[dict, Fr24Credits | None]:
-            with Client(api_token=self._api_token) as client:
-                response = client.transport.request(
-                    "GET",
-                    "/api/live/flight-positions/full",
-                    params=_coerce_params(params),
-                )
-                credits = _extract_credits(response.headers)
-                try:
-                    payload = response.json()
-                except ValueError:
-                    payload = {}
-                return payload, credits
+            response = client.transport.request(
+                "GET",
+                "/api/live/flight-positions/full",
+                params=_coerce_params(params),
+            )
+            credits = _extract_credits(response.headers)
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = {}
+            return payload, credits
 
         try:
             self._log.debug("FR24 request params=%s", params)
@@ -145,6 +146,16 @@ class Fr24Client:
             return Fr24Response(flights=[], credits=None, error=error, rate_limited=False)
         flights = _normalize_positions(payload)
         return Fr24Response(flights=flights, credits=credits, error=None, rate_limited=False)
+
+    async def _ensure_client(self) -> Client:
+        if self._client is None:
+            self._client = Client(api_token=self._api_token)
+        return self._client
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await asyncio.to_thread(self._client.transport.close)
+            self._client = None
 
 
 class _RateLimiter:
