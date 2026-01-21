@@ -601,8 +601,11 @@ async def _process_flights(
     for flight in flights:
         if not flight:
             continue
-        if sub_type == "aircraft" and not _has_registration(flight):
-            continue
+        if sub_type == "aircraft":
+            if not _has_registration(flight):
+                continue
+            if _is_stationary_zero(flight):
+                continue
         if sub_type == "airport" and not await _is_airport_alert_eligible(flight, reference_data):
             continue
         flight_id = _build_flight_id(flight)
