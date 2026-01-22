@@ -1,7 +1,7 @@
 # Ops and Admin CLI
 
 This repository includes a lightweight admin CLI that you can run inside the container terminal to inspect the SQLite database and log output.
-Logs are written to LOG_DIR (default /data/logs) with hourly rotation and 24-hour retention by default.
+Logs are written to `LOG_DIR` (default `/data/logs`) with hourly rotation and 24-hour retention by default.
 Poller errors are posted to each guild notify channel tagging the bot owner.
 
 ## How to run

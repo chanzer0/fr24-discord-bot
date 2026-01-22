@@ -8,15 +8,15 @@
 - SQLite storage: persists guild settings, subscriptions, and notification dedupe logs.
 
 ## Data flow
-1. Bot owner runs /set-notify-channel to store the default channel for a guild.
+1. Bot owner runs `/set-notify-channel` to store the default channel for a guild.
 2. Users subscribe to aircraft or inbound airport codes.
 3. Poller reads all subscriptions, groups by code, and calls FR24.
 4. For each matching flight, the bot sends an embed to the guild's notify channel and tags the user.
 5. A dedupe log prevents repeated notifications for the same flight.
-6. The owner can run /refresh-reference to update airport/model data used for autocomplete.
+6. The owner can run `/refresh-reference` to update airport/model data used for autocomplete.
 
 ## Storage
-- SQLite file at SQLITE_PATH (default /data/bot.db).
+- SQLite file at `SQLITE_PATH` (default `/data/bot.db`).
 - Tables:
   - guild_settings: one row per guild with notify channel ID, plus guild/channel names.
   - subscriptions: one row per user per (type, code), including user/guild display names.
@@ -38,4 +38,4 @@
 ## Observability
 - Startup checks log non-sensitive config, DB counts, and capability status.
 - Poller logs cycle completion and cleanup logs pruned rows.
-- Logs are written to rotating files in LOG_DIR for quick review.
+- Logs are written to rotating files in `LOG_DIR` for quick review.
