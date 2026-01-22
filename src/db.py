@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 import aiosqlite
 
@@ -349,14 +350,18 @@ class Database:
         if not subscription_ids:
             return
         notified_at = utc_now_iso()
-        await self._conn.executemany(
-            '''
-            INSERT OR IGNORE INTO notification_log (subscription_id, flight_id, notified_at)
-            VALUES (?, ?, ?)
-            ''',
-            [(sub_id, flight_id, notified_at) for sub_id in subscription_ids],
+        placeholders = ",".join("?" for _ in subscription_ids)
+        query = (
+            "INSERT OR IGNORE INTO notification_log (subscription_id, flight_id, notified_at) "
+            "SELECT id, ?, ? FROM subscriptions "
+            f"WHERE id IN ({placeholders})"
         )
-        await self._conn.commit()
+        try:
+            await self._conn.execute(query, (flight_id, notified_at, *subscription_ids))
+            await self._conn.commit()
+        except sqlite3.IntegrityError:
+            # Subscription may have been deleted after polling; ignore to keep poller healthy.
+            await self._conn.commit()
 
     async def cleanup_notifications(self, older_than_iso: str) -> int:
         if not self._conn:
