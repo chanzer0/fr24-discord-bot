@@ -15,7 +15,7 @@
 - Each FR24 response includes credit headers; notifications display consumed/remaining credits.
 
 ## Pacing controls
-- POLL_INTERVAL_SECONDS: base poll cadence.
+- POLL_INTERVAL_SECONDS: base poll cadence (default 150s).
 - POLL_JITTER_SECONDS: adds jitter to avoid synchronized spikes.
 - FR24_REQUEST_DELAY_SECONDS: delay between FR24 requests within a cycle.
 - FR24_MAX_REQUESTS_PER_MIN: hard cap across all FR24 requests.

@@ -84,7 +84,7 @@ def load_config() -> Config:
         discord_token=_require_env("DISCORD_TOKEN"),
         fr24_api_key=_require_env("FR24_API_KEY"),
         bot_owner_ids=_parse_owner_ids(),
-        poll_interval_seconds=_int_env("POLL_INTERVAL_SECONDS", 300),
+        poll_interval_seconds=_int_env("POLL_INTERVAL_SECONDS", 150),
         poll_jitter_seconds=_int_env("POLL_JITTER_SECONDS", 5),
         fr24_request_delay_seconds=_float_env("FR24_REQUEST_DELAY_SECONDS", 0.5),
         fr24_max_requests_per_min=max(1, _int_env("FR24_MAX_REQUESTS_PER_MIN", 10)),
