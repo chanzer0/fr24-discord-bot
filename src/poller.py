@@ -979,7 +979,6 @@ async def _send_notification(
         sub_type=sub_type,
         codes=subscription_codes,
         display_code=display_code,
-        allowed_user_ids=user_ids,
     )
 
     try:

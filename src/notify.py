@@ -136,7 +136,6 @@ class AlertView(discord.ui.View):
         sub_type: str,
         codes: list[str],
         display_code: str,
-        allowed_user_ids: list[str],
         timeout_seconds: int = 3600,
     ) -> None:
         super().__init__(timeout=timeout_seconds)
@@ -146,7 +145,6 @@ class AlertView(discord.ui.View):
         self._sub_type = sub_type
         self._codes = self._normalize_codes(codes)
         self._display_code = display_code
-        self._allowed_user_ids = self._normalize_user_ids(allowed_user_ids)
 
         if url:
             self.add_item(discord.ui.Button(label="View on FR24", url=url))
@@ -172,20 +170,6 @@ class AlertView(discord.ui.View):
             normalized.append(value)
         return normalized
 
-    @staticmethod
-    def _normalize_user_ids(user_ids: list[str]) -> list[str]:
-        normalized: list[str] = []
-        seen: set[str] = set()
-        for user_id in user_ids:
-            if user_id is None:
-                continue
-            value = str(user_id).strip()
-            if not value or value in seen:
-                continue
-            seen.add(value)
-            normalized.append(value)
-        return normalized
-
     async def _handle_unsubscribe(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             await interaction.response.send_message(
@@ -196,12 +180,6 @@ class AlertView(discord.ui.View):
         if str(interaction.guild_id) != self._guild_id:
             await interaction.response.send_message(
                 "This alert belongs to another server.",
-                ephemeral=True,
-            )
-            return
-        if str(interaction.user.id) not in self._allowed_user_ids:
-            await interaction.response.send_message(
-                "You are not authorized to perform this action.",
                 ephemeral=True,
             )
             return
@@ -229,7 +207,7 @@ class AlertView(discord.ui.View):
             )
             return
         await interaction.response.send_message(
-            f"No subscription found for {self._sub_type} {self._display_code}.",
+            f"You do not have any subscriptions for {self._display_code}.",
             ephemeral=True,
         )
 
@@ -242,7 +220,6 @@ def build_view(
     sub_type: str,
     codes: list[str],
     display_code: str,
-    allowed_user_ids: list[str],
 ) -> discord.ui.View | None:
     if not url and not codes:
         return None
@@ -259,5 +236,4 @@ def build_view(
         sub_type=sub_type,
         codes=codes,
         display_code=display_code,
-        allowed_user_ids=allowed_user_ids,
     )
