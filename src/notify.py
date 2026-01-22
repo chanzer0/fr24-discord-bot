@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 
 import discord
 
@@ -126,9 +127,137 @@ def build_embed(
     return embed
 
 
-def build_view(url: str | None) -> discord.ui.View | None:
-    if not url:
+class AlertView(discord.ui.View):
+    def __init__(
+        self,
+        url: str | None,
+        db,
+        guild_id: str,
+        sub_type: str,
+        codes: list[str],
+        display_code: str,
+        allowed_user_ids: list[str],
+        timeout_seconds: int = 3600,
+    ) -> None:
+        super().__init__(timeout=timeout_seconds)
+        self._log = logging.getLogger(__name__)
+        self._db = db
+        self._guild_id = guild_id
+        self._sub_type = sub_type
+        self._codes = self._normalize_codes(codes)
+        self._display_code = display_code
+        self._allowed_user_ids = self._normalize_user_ids(allowed_user_ids)
+
+        if url:
+            self.add_item(discord.ui.Button(label="View on FR24", url=url))
+
+        unsubscribe = discord.ui.Button(
+            label="Unsubscribe",
+            style=discord.ButtonStyle.danger,
+        )
+        unsubscribe.callback = self._handle_unsubscribe
+        self.add_item(unsubscribe)
+
+    @staticmethod
+    def _normalize_codes(codes: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for code in codes:
+            if not code:
+                continue
+            value = str(code).strip().upper()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            normalized.append(value)
+        return normalized
+
+    @staticmethod
+    def _normalize_user_ids(user_ids: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for user_id in user_ids:
+            if user_id is None:
+                continue
+            value = str(user_id).strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            normalized.append(value)
+        return normalized
+
+    async def _handle_unsubscribe(self, interaction: discord.Interaction) -> None:
+        if interaction.guild_id is None:
+            await interaction.response.send_message(
+                "This button can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+        if str(interaction.guild_id) != self._guild_id:
+            await interaction.response.send_message(
+                "This alert belongs to another server.",
+                ephemeral=True,
+            )
+            return
+        if str(interaction.user.id) not in self._allowed_user_ids:
+            await interaction.response.send_message(
+                "You are not authorized to perform this action.",
+                ephemeral=True,
+            )
+            return
+        removed = 0
+        try:
+            for code in self._codes:
+                if await self._db.remove_subscription(
+                    guild_id=self._guild_id,
+                    user_id=str(interaction.user.id),
+                    sub_type=self._sub_type,
+                    code=code,
+                ):
+                    removed += 1
+        except Exception:
+            self._log.exception("Failed to remove subscription via alert button")
+            await interaction.response.send_message(
+                "Failed to unsubscribe. Please try again later.",
+                ephemeral=True,
+            )
+            return
+        if removed:
+            await interaction.response.send_message(
+                f"Unsubscribed from {self._sub_type} {self._display_code}.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(
+            f"No subscription found for {self._sub_type} {self._display_code}.",
+            ephemeral=True,
+        )
+
+
+def build_view(
+    url: str | None,
+    *,
+    db,
+    guild_id: str,
+    sub_type: str,
+    codes: list[str],
+    display_code: str,
+    allowed_user_ids: list[str],
+) -> discord.ui.View | None:
+    if not url and not codes:
         return None
-    view = discord.ui.View()
-    view.add_item(discord.ui.Button(label="View on FR24", url=url))
-    return view
+    if not db or not guild_id or not sub_type:
+        if not url:
+            return None
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="View on FR24", url=url))
+        return view
+    return AlertView(
+        url=url,
+        db=db,
+        guild_id=guild_id,
+        sub_type=sub_type,
+        codes=codes,
+        display_code=display_code,
+        allowed_user_ids=allowed_user_ids,
+    )

@@ -442,7 +442,6 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 credits = fallback_result.credits
                 _note_credits(credits)
                 _track_aircraft_codes(flights)
-                _note_airport_code(target["display_code"], len(flights))
                 if credits and (credits.remaining is not None or credits.consumed is not None):
                     await db.set_fr24_credits(
                         remaining=credits.remaining,
@@ -878,6 +877,9 @@ async def _process_flights(
             channel_id = channel_map.get(guild_id)
             if not channel_id:
                 continue
+            subscription_codes = sorted(
+                {sub["code"] for sub in guild_subs if sub.get("code")}
+            )
             subscription_ids = [sub["id"] for sub in guild_subs]
             already_logged = await db.fetch_logged_subscription_ids(
                 flight_id, subscription_ids
@@ -888,13 +890,16 @@ async def _process_flights(
             user_ids = sorted({sub["user_id"] for sub in to_notify})
             sent = await _send_notification(
                 bot=bot,
+                db=db,
                 config=config,
                 channel_id=channel_id,
+                guild_id=guild_id,
                 user_ids=user_ids,
                 flight=flight,
                 sub_type=sub_type,
                 display_code=display_code,
                 credits=credits,
+                subscription_codes=subscription_codes,
             )
             if sent:
                 await db.log_notifications(
@@ -939,13 +944,16 @@ def _build_notification_content(user_ids: list[str], code: str, limit: int = 200
 
 async def _send_notification(
     bot,
+    db,
     config,
     channel_id: str,
+    guild_id: str,
     user_ids: list[str],
     flight: dict,
     sub_type: str,
     display_code: str,
     credits,
+    subscription_codes: list[str],
 ) -> bool:
     log = logging.getLogger(__name__)
     try:
@@ -964,7 +972,15 @@ async def _send_notification(
         credits_remaining=getattr(credits, "remaining", None),
     )
     url = build_fr24_link(flight, config.fr24_web_base_url)
-    view = build_view(url)
+    view = build_view(
+        url,
+        db=db,
+        guild_id=guild_id,
+        sub_type=sub_type,
+        codes=subscription_codes,
+        display_code=display_code,
+        allowed_user_ids=user_ids,
+    )
 
     try:
         content = _build_notification_content(user_ids, display_code)
