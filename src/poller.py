@@ -400,7 +400,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     len(flights),
                 )
                 if flights:
-                    log.info(
+                    log.debug(
                         "FR24 sample flight data for aircraft %s: %s",
                         aircraft_code,
                         json.dumps(flights[0], sort_keys=True, default=str),
@@ -437,7 +437,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             len(flights),
         )
         if flights:
-            log.info(
+            log.debug(
                 "FR24 sample flight data for aircraft batch %s: %s",
                 ",".join(batch),
                 json.dumps(flights[0], sort_keys=True, default=str),
@@ -553,7 +553,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     len(flights),
                 )
                 if flights:
-                    log.info(
+                    log.debug(
                         "FR24 sample flight data for airport %s: %s",
                         request_code,
                         json.dumps(flights[0], sort_keys=True, default=str),
@@ -590,7 +590,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             len(flights),
         )
         if flights:
-            log.info(
+            log.debug(
                 "FR24 sample flight data for airport batch %s: %s",
                 ",".join(batch),
                 json.dumps(flights[0], sort_keys=True, default=str),
@@ -685,7 +685,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             len(flights),
         )
         if flights:
-            log.info(
+            log.debug(
                 "FR24 sample flight data for airport country %s: %s",
                 country_code,
                 json.dumps(flights[0], sort_keys=True, default=str),
