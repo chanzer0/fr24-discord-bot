@@ -60,16 +60,21 @@ def _normalize_positions(result: Any) -> list[dict]:
     return [_coerce_dict(item) for item in items if item is not None]
 
 
-def _coerce_params(params: dict) -> dict:
-    coerced: dict[str, str] = {}
+def _normalize_params(params: dict, coerce_lists: bool) -> dict:
+    normalized: dict[str, Any] = {}
     for key, value in params.items():
         if value is None:
             continue
         if isinstance(value, list):
-            coerced[key] = ",".join(str(item) for item in value)
+            cleaned = [item for item in value if item is not None and item != ""]
+            if not cleaned:
+                continue
+            normalized[key] = (
+                ",".join(str(item) for item in cleaned) if coerce_lists else cleaned
+            )
         else:
-            coerced[key] = str(value)
-    return coerced
+            normalized[key] = str(value)
+    return normalized
 
 
 def _parse_int(value: str | None) -> int | None:
@@ -99,6 +104,69 @@ class Fr24Client:
     async def fetch_by_aircraft(self, code: str) -> Fr24Response:
         return await self._call({"aircraft": code})
 
+    @staticmethod
+    def is_param_error(error: str | None) -> bool:
+        if not error:
+            return False
+        lowered = error.lower()
+        tokens = (
+            "badrequest",
+            "bad request",
+            "validation",
+            "pydantic",
+            "invalid format",
+            "list_type",
+            "pattern",
+        )
+        return any(token in lowered for token in tokens)
+
+    async def fetch_by_aircraft_batch(self, codes: list[str]) -> Fr24Response:
+        cleaned = [str(code).strip().upper() for code in codes if str(code).strip()]
+        if not cleaned:
+            return Fr24Response(flights=[], credits=None, error=None, rate_limited=False)
+        if len(cleaned) == 1:
+            return await self.fetch_by_aircraft(cleaned[0])
+
+        attempts = [
+            ("comma", {"aircraft": ",".join(cleaned)}, False),
+            ("list", {"aircraft": cleaned}, False),
+            ("raw", {"aircraft": cleaned}, True),
+        ]
+        errors: list[str] = []
+        for label, params, coerce in attempts:
+            result = await self._call_transport(params, coerce_lists=coerce)
+            if result.rate_limited:
+                self._log.warning(
+                    "FR24 aircraft batch rate limited strategy=%s size=%s",
+                    label,
+                    len(cleaned),
+                )
+                return result
+            if result.error:
+                self._log.warning(
+                    "FR24 aircraft batch failed strategy=%s size=%s error=%s",
+                    label,
+                    len(cleaned),
+                    result.error,
+                )
+                errors.append(f"{label}: {result.error}")
+                if not self.is_param_error(result.error):
+                    return result
+                continue
+            self._log.info(
+                "FR24 aircraft batch succeeded strategy=%s size=%s",
+                label,
+                len(cleaned),
+            )
+            return result
+
+        return Fr24Response(
+            flights=[],
+            credits=None,
+            error="; ".join(errors) if errors else "Batch request failed",
+            rate_limited=False,
+        )
+
     async def fetch_by_airport_inbound(self, code: str) -> Fr24Response:
         return await self._call({"airports": f"inbound:{code}"})
 
@@ -106,9 +174,50 @@ class Fr24Client:
         if not codes:
             return Fr24Response(flights=[], credits=None, error=None, rate_limited=False)
         parts = [f"inbound:{code}" for code in codes]
-        return await self._call({"airports": ",".join(parts)})
+        attempts = [
+            ("comma", {"airports": ",".join(parts)}, False),
+            ("list", {"airports": parts}, False),
+            ("raw", {"airports": parts}, True),
+        ]
+        errors: list[str] = []
+        for label, params, coerce in attempts:
+            result = await self._call_transport(params, coerce_lists=coerce)
+            if result.rate_limited:
+                self._log.warning(
+                    "FR24 airport batch rate limited strategy=%s size=%s",
+                    label,
+                    len(parts),
+                )
+                return result
+            if result.error:
+                self._log.warning(
+                    "FR24 airport batch failed strategy=%s size=%s error=%s",
+                    label,
+                    len(parts),
+                    result.error,
+                )
+                errors.append(f"{label}: {result.error}")
+                if not self.is_param_error(result.error):
+                    return result
+                continue
+            self._log.info(
+                "FR24 airport batch succeeded strategy=%s size=%s",
+                label,
+                len(parts),
+            )
+            return result
+
+        return Fr24Response(
+            flights=[],
+            credits=None,
+            error="; ".join(errors) if errors else "Batch request failed",
+            rate_limited=False,
+        )
 
     async def _call(self, params: dict) -> Fr24Response:
+        return await self._call_transport(params, coerce_lists=True)
+
+    async def _call_transport(self, params: dict, coerce_lists: bool) -> Fr24Response:
         await self._rate_limiter.wait()
         client = await self._ensure_client()
 
@@ -116,7 +225,7 @@ class Fr24Client:
             response = client.transport.request(
                 "GET",
                 "/api/live/flight-positions/full",
-                params=_coerce_params(params),
+                params=_normalize_params(params, coerce_lists=coerce_lists),
             )
             credits = _extract_credits(response.headers)
             try:
