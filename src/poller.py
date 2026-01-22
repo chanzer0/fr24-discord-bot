@@ -248,9 +248,14 @@ async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None
                 aircraft_counts_text = ", ".join(aircraft_counts)
             else:
                 aircraft_counts_text = "none"
+            airport_counts = metrics.get("airport_code_counts") or []
+            if airport_counts:
+                airport_counts_text = ", ".join(airport_counts)
+            else:
+                airport_counts_text = "none"
             credits_remaining = metrics.get("credits_remaining")
             log.info(
-                "Poll cycle complete: subs=%s unique=%s requests=%s duration=%.1fs sleep=%.1fs credits_remaining=%s aircraft_count=%s aircraft_icao_counts=%s",
+                "Poll cycle complete: subs=%s unique=%s requests=%s duration=%.1fs sleep=%.1fs credits_remaining=%s aircraft_count=%s aircraft_icao_counts=%s airport_count=%s airport_code_counts=%s",
                 metrics.get("subscriptions"),
                 metrics.get("unique"),
                 metrics.get("requests"),
@@ -259,6 +264,8 @@ async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None
                 credits_remaining if credits_remaining is not None else "n/a",
                 metrics.get("aircraft_count", 0),
                 aircraft_counts_text,
+                metrics.get("airport_count", 0),
+                airport_counts_text,
             )
         await poller_state.sleep(sleep_for)
 
@@ -272,6 +279,8 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
     aircraft_icao_counts: dict[str, int] = {}
     aircraft_icao_order: list[str] = []
+    airport_code_counts: dict[str, int] = {}
+    airport_code_order: list[str] = []
     credits_remaining: int | None = None
 
     def _track_aircraft_codes(flights: list[dict]) -> None:
@@ -292,6 +301,18 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         if not credits or credits.remaining is None:
             return
         credits_remaining = credits.remaining
+
+    def _note_airport_code(code: str, count: int) -> None:
+        if not code or count <= 0:
+            return
+        normalized = str(code).strip().upper()
+        if len(normalized) < 3:
+            return
+        if normalized in airport_code_counts:
+            airport_code_counts[normalized] += count
+        else:
+            airport_code_counts[normalized] = count
+            airport_code_order.append(normalized)
 
     channel_map = await db.fetch_guild_channels()
     aircraft_groups: dict[str, list[dict]] = {}
@@ -421,6 +442,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 credits = fallback_result.credits
                 _note_credits(credits)
                 _track_aircraft_codes(flights)
+                _note_airport_code(target["display_code"], len(flights))
                 if credits and (credits.remaining is not None or credits.consumed is not None):
                     await db.set_fr24_credits(
                         remaining=credits.remaining,
@@ -666,6 +688,9 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 continue
             for request_code in matched:
                 flights_by_code.setdefault(request_code, []).append(flight)
+                target = airport_targets.get(request_code)
+                if target:
+                    _note_airport_code(target["display_code"], 1)
 
         for request_code, matched_flights in flights_by_code.items():
             if not matched_flights:
@@ -724,6 +749,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         credits = result.credits
         _note_credits(credits)
         _track_aircraft_codes(flights)
+        _note_airport_code(target["display_code"], len(flights))
         if credits and (credits.remaining is not None or credits.consumed is not None):
             await db.set_fr24_credits(
                 remaining=credits.remaining,
@@ -767,6 +793,10 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         "aircraft_count": sum(aircraft_icao_counts.values()),
         "aircraft_icao_counts": [
             f"{code} ({aircraft_icao_counts[code]})" for code in aircraft_icao_order
+        ],
+        "airport_count": sum(airport_code_counts.values()),
+        "airport_code_counts": [
+            f"{code} ({airport_code_counts[code]})" for code in airport_code_order
         ],
     }
 
