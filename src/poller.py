@@ -243,13 +243,22 @@ async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None
         base_sleep = max(0.0, poller_state.interval_seconds - elapsed)
         sleep_for = base_sleep + random.uniform(0, config.poll_jitter_seconds)
         if metrics:
+            aircraft_counts = metrics.get("aircraft_icao_counts") or []
+            if aircraft_counts:
+                aircraft_counts_text = ", ".join(aircraft_counts)
+            else:
+                aircraft_counts_text = "none"
+            credits_remaining = metrics.get("credits_remaining")
             log.info(
-                "Poll cycle complete: subs=%s unique=%s requests=%s duration=%.1fs sleep=%.1fs",
+                "Poll cycle complete: subs=%s unique=%s requests=%s duration=%.1fs sleep=%.1fs credits_remaining=%s aircraft_count=%s aircraft_icao_counts=%s",
                 metrics.get("subscriptions"),
                 metrics.get("unique"),
                 metrics.get("requests"),
                 elapsed,
                 sleep_for,
+                credits_remaining if credits_remaining is not None else "n/a",
+                metrics.get("aircraft_count", 0),
+                aircraft_counts_text,
             )
         await poller_state.sleep(sleep_for)
 
@@ -260,6 +269,29 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
     if not subs:
         log.info("Poll cycle skipped (no subscriptions)")
         return
+
+    aircraft_icao_counts: dict[str, int] = {}
+    aircraft_icao_order: list[str] = []
+    credits_remaining: int | None = None
+
+    def _track_aircraft_codes(flights: list[dict]) -> None:
+        for flight in flights:
+            if not flight:
+                continue
+            aircraft_code = _extract_aircraft_code(flight)
+            if not aircraft_code:
+                continue
+            if aircraft_code in aircraft_icao_counts:
+                aircraft_icao_counts[aircraft_code] += 1
+            else:
+                aircraft_icao_counts[aircraft_code] = 1
+                aircraft_icao_order.append(aircraft_code)
+
+    def _note_credits(credits) -> None:
+        nonlocal credits_remaining
+        if not credits or credits.remaining is None:
+            return
+        credits_remaining = credits.remaining
 
     channel_map = await db.fetch_guild_channels()
     aircraft_groups: dict[str, list[dict]] = {}
@@ -387,6 +419,8 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
                 flights = fallback_result.flights
                 credits = fallback_result.credits
+                _note_credits(credits)
+                _track_aircraft_codes(flights)
                 if credits and (credits.remaining is not None or credits.consumed is not None):
                     await db.set_fr24_credits(
                         remaining=credits.remaining,
@@ -424,6 +458,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
         flights = result.flights
         credits = result.credits
+        _note_credits(credits)
         if credits and (credits.remaining is not None or credits.consumed is not None):
             await db.set_fr24_credits(
                 remaining=credits.remaining,
@@ -450,6 +485,11 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             aircraft_code = _extract_aircraft_code(flight)
             if not aircraft_code:
                 continue
+            if aircraft_code in aircraft_icao_counts:
+                aircraft_icao_counts[aircraft_code] += 1
+            else:
+                aircraft_icao_counts[aircraft_code] = 1
+                aircraft_icao_order.append(aircraft_code)
             if aircraft_code in flights_by_code:
                 flights_by_code[aircraft_code].append(flight)
 
@@ -540,6 +580,8 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
                 flights = fallback_result.flights
                 credits = fallback_result.credits
+                _note_credits(credits)
+                _track_aircraft_codes(flights)
                 if credits and (credits.remaining is not None or credits.consumed is not None):
                     await db.set_fr24_credits(
                         remaining=credits.remaining,
@@ -577,6 +619,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
         flights = result.flights
         credits = result.credits
+        _note_credits(credits)
         if credits and (credits.remaining is not None or credits.consumed is not None):
             await db.set_fr24_credits(
                 remaining=credits.remaining,
@@ -608,6 +651,13 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         for flight in flights:
             if not flight:
                 continue
+            aircraft_code = _extract_aircraft_code(flight)
+            if aircraft_code:
+                if aircraft_code in aircraft_icao_counts:
+                    aircraft_icao_counts[aircraft_code] += 1
+                else:
+                    aircraft_icao_counts[aircraft_code] = 1
+                    aircraft_icao_order.append(aircraft_code)
             dest_codes = _extract_destination_codes(flight)
             matched = set()
             for dest_code in dest_codes:
@@ -672,6 +722,8 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
         flights = result.flights
         credits = result.credits
+        _note_credits(credits)
+        _track_aircraft_codes(flights)
         if credits and (credits.remaining is not None or credits.consumed is not None):
             await db.set_fr24_credits(
                 remaining=credits.remaining,
@@ -711,6 +763,11 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         "unique": unique_count,
         "requests": total_requests,
         "estimated_min_seconds": estimated_min_seconds,
+        "credits_remaining": credits_remaining,
+        "aircraft_count": sum(aircraft_icao_counts.values()),
+        "aircraft_icao_counts": [
+            f"{code} ({aircraft_icao_counts[code]})" for code in aircraft_icao_order
+        ],
     }
 
 
