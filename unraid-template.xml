@@ -26,7 +26,7 @@
   <Config Name="FR24 API Key" Target="FR24_API_KEY" Default="" Mode="" Description="Flightradar24 API token" Type="Variable" Display="always" Required="true" Mask="true"/>
   <Config Name="Bot Owner IDs" Target="BOT_OWNER_IDS" Default="" Mode="" Description="CSV of Discord user IDs allowed to run owner-only commands" Type="Variable" Display="always" Required="true" Mask="false"/>
   <Config Name="SQLite Path" Target="SQLITE_PATH" Default="/data/bot.db" Mode="" Description="SQLite database file path" Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Poll Interval Seconds" Target="POLL_INTERVAL_SECONDS" Default="300" Mode="" Description="Base polling interval in seconds" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Poll Interval Seconds" Target="POLL_INTERVAL_SECONDS" Default="150" Mode="" Description="Base polling interval in seconds" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="Poll Jitter Seconds" Target="POLL_JITTER_SECONDS" Default="5" Mode="" Description="Adds jitter to polling interval to avoid bursts" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="FR24 Request Delay Seconds" Target="FR24_REQUEST_DELAY_SECONDS" Default="0.5" Mode="" Description="Delay between FR24 requests in a poll cycle" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="FR24 Max Requests Per Min" Target="FR24_MAX_REQUESTS_PER_MIN" Default="10" Mode="" Description="Hard cap for FR24 requests per minute" Type="Variable" Display="advanced" Required="false" Mask="false"/>
