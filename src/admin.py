@@ -314,6 +314,19 @@ def cmd_subs(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
     )
 
 
+def cmd_subs_by_user(conn: sqlite3.Connection) -> None:
+    _ensure_core_columns(conn)
+    rows = conn.execute(
+        '''
+        SELECT user_name, user_id, COUNT(*) AS subs
+        FROM subscriptions
+        GROUP BY user_id, user_name
+        ORDER BY subs DESC, user_name
+        '''
+    ).fetchall()
+    _print_rows(rows, ["user_name", "user_id", "subs"])
+
+
 def cmd_recent(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
     query = (
         "SELECT id, subscription_id, flight_id, notified_at FROM notification_log WHERE 1=1"
@@ -445,6 +458,8 @@ def build_parser() -> argparse.ArgumentParser:
     subs.add_argument("--type", choices=["aircraft", "airport"])
     subs.add_argument("--code")
 
+    sub.add_parser("subs-by-user", help="Count subscriptions grouped by user")
+
     recent = sub.add_parser("recent", help="Show recent notifications")
     recent.add_argument("--limit", type=int, default=20)
     recent.add_argument("--subscription", type=int)
@@ -485,6 +500,8 @@ def main() -> None:
             cmd_guilds(conn)
         elif args.command == "subs":
             cmd_subs(conn, args)
+        elif args.command == "subs-by-user":
+            cmd_subs_by_user(conn)
         elif args.command == "recent":
             cmd_recent(conn, args)
         elif args.command == "clear-notifications":

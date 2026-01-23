@@ -41,32 +41,11 @@ python -m src.admin subs --guild 123 --type aircraft
 python -m src.admin subs --user 456 --code A388
 ```
 
-### subs-by-user (quick SQL)
+### subs-by-user
 Shows subscription counts grouped by user (user name + ID).
 
 ```bash
-python - <<'PY'
-import os
-import sqlite3
-
-db_path = os.getenv("SQLITE_PATH", "/data/bot.db")
-conn = sqlite3.connect(db_path)
-conn.row_factory = sqlite3.Row
-rows = conn.execute(
-    """
-    SELECT user_name,
-           user_id,
-           COUNT(*) AS subs
-    FROM subscriptions
-    GROUP BY user_id, user_name
-    ORDER BY subs DESC, user_name
-    """
-).fetchall()
-print("user_name\tuser_id\tsubs")
-for row in rows:
-    print(f"{row['user_name']}\t{row['user_id']}\t{row['subs']}")
-conn.close()
-PY
+python -m src.admin subs-by-user
 ```
 
 ### recent
