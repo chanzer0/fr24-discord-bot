@@ -31,7 +31,7 @@ Before adding the repo as a template source, verify `unraid-template.xml` points
 
 ## Required environment variables
 - `DISCORD_TOKEN`
-- `FR24_API_KEY`
+- `FR24_API_KEYS` (CSV of FR24 API keys)
 - `BOT_OWNER_IDS`
 
 ## Optional environment variables

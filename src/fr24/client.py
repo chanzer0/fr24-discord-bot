@@ -5,6 +5,7 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass
+from typing import Any
 
 from fr24sdk.client import Client
 from fr24sdk.exceptions import RateLimitError, TransportError
@@ -91,12 +92,90 @@ def _extract_credits(headers) -> Fr24Credits | None:
     return Fr24Credits(consumed=consumed, remaining=remaining)
 
 
+@dataclass
+class _KeyState:
+    index: int
+    token: str
+    client: Client
+    limiter: "_RateLimiter"
+    requests: int = 0
+    last_used: float = 0.0
+
+
+class _SpacingLimiter:
+    def __init__(self, min_interval: float) -> None:
+        self._min_interval = max(0.0, min_interval)
+        self._lock = asyncio.Lock()
+        self._next_at = 0.0
+
+    @property
+    def min_interval(self) -> float:
+        return self._min_interval
+
+    async def wait(self) -> float:
+        waited = 0.0
+        async with self._lock:
+            now = time.monotonic()
+            if now < self._next_at:
+                waited = self._next_at - now
+                await asyncio.sleep(waited)
+                now = time.monotonic()
+            self._next_at = now + self._min_interval
+        return waited
+
+    async def snapshot(self) -> dict[str, float]:
+        async with self._lock:
+            now = time.monotonic()
+            return {
+                "min_interval": self._min_interval,
+                "next_in": max(0.0, self._next_at - now),
+            }
+
+
 class Fr24Client:
-    def __init__(self, api_token: str, max_requests_per_min: int) -> None:
-        self._api_token = api_token
+    def __init__(self, api_tokens: list[str], max_requests_per_min: int) -> None:
+        if not api_tokens:
+            raise ValueError("FR24 API keys list is empty")
         self._log = logging.getLogger(__name__)
-        self._rate_limiter = _RateLimiter(max_requests_per_min)
-        self._client: Client | None = None
+        self._max_requests_per_min = max(1, max_requests_per_min)
+        self._keys: list[_KeyState] = []
+        for idx, token in enumerate(api_tokens):
+            client = Client(api_token=token)
+            limiter = _RateLimiter(self._max_requests_per_min)
+            self._keys.append(
+                _KeyState(
+                    index=idx,
+                    token=token,
+                    client=client,
+                    limiter=limiter,
+                )
+            )
+        self._select_lock = asyncio.Lock()
+        self._rr_index = 0
+        key_count = len(self._keys)
+        per_key_min_interval = self._keys[0].limiter.min_interval
+        pool_min_interval = (
+            per_key_min_interval / key_count if key_count > 1 else 0.0
+        )
+        self._pool_limiter = _SpacingLimiter(pool_min_interval) if key_count > 1 else None
+        self._log.info(
+            "FR24 key pool initialized: keys=%s max_requests_per_min=%s",
+            len(self._keys),
+            self._max_requests_per_min,
+        )
+        for key in self._keys:
+            self._log.info(
+                "FR24 key[%s] limiter: min_interval=%.2fs",
+                key.index,
+                key.limiter.min_interval,
+            )
+        self._log.info(
+            "FR24 pool pacing: key_count=%s per_key_min_interval=%.2fs pool_min_interval=%.2fs enabled=%s",
+            key_count,
+            per_key_min_interval,
+            pool_min_interval,
+            "yes" if self._pool_limiter else "no",
+        )
 
     async def fetch_by_aircraft(self, code: str) -> Fr24Response:
         return await self._call({"aircraft": code})
@@ -134,12 +213,102 @@ class Fr24Client:
         parts = [f"inbound:{code}" for code in codes]
         return await self._call({"airports": ",".join(parts)})
 
+    def reset_cycle_stats(self) -> None:
+        for key in self._keys:
+            key.requests = 0
+
+    async def snapshot_keys(self) -> list[dict]:
+        snapshots: list[dict] = []
+        now = time.monotonic()
+        for key in self._keys:
+            limiter = await key.limiter.snapshot()
+            last_used_ago = None
+            if key.last_used > 0:
+                last_used_ago = max(0.0, now - key.last_used)
+            snapshots.append(
+                {
+                    "index": key.index,
+                    "requests": key.requests,
+                    "last_used_ago": last_used_ago,
+                    "next_in": limiter["next_in"],
+                    "cooldown_in": limiter["cooldown_in"],
+                    "min_interval": limiter["min_interval"],
+                    "recent": limiter["recent"],
+                }
+            )
+        return snapshots
+
+    async def _select_key(self, params: dict) -> tuple[_KeyState, float]:
+        async with self._select_lock:
+            statuses: list[tuple[_KeyState, dict, float]] = []
+            best_wait: float | None = None
+            for key in self._keys:
+                snapshot = await key.limiter.snapshot()
+                wait_for = max(snapshot["next_in"], snapshot["cooldown_in"])
+                statuses.append((key, snapshot, wait_for))
+                if best_wait is None or wait_for < best_wait:
+                    best_wait = wait_for
+            if best_wait is None:
+                raise RuntimeError("No FR24 API keys available")
+            selected_idx = None
+            key_count = len(self._keys)
+            for offset in range(key_count):
+                idx = (self._rr_index + offset) % key_count
+                if abs(statuses[idx][2] - best_wait) <= 0.001:
+                    selected_idx = idx
+                    break
+            if selected_idx is None:
+                selected_idx = 0
+            self._rr_index = (selected_idx + 1) % key_count
+            selected = statuses[selected_idx][0]
+            status_text = self._format_key_statuses(statuses)
+            self._log.info(
+                "FR24 key select: selected=%s/%s wait=%.2fs params=%s keys=[%s]",
+                selected.index + 1,
+                key_count,
+                best_wait,
+                params,
+                status_text,
+            )
+            return selected, best_wait
+
+    @staticmethod
+    def _format_key_statuses(
+        statuses: list[tuple[_KeyState, dict, float]]
+    ) -> str:
+        parts: list[str] = []
+        for key, snapshot, wait_for in statuses:
+            parts.append(
+                "key%s wait=%.2fs next=%.2fs cooldown=%.2fs min=%.2fs recent=%s requests=%s"
+                % (
+                    key.index + 1,
+                    wait_for,
+                    snapshot["next_in"],
+                    snapshot["cooldown_in"],
+                    snapshot["min_interval"],
+                    snapshot["recent"],
+                    key.requests,
+                )
+            )
+        return "; ".join(parts)
+
     async def _call(self, params: dict) -> Fr24Response:
-        await self._rate_limiter.wait()
-        client = await self._ensure_client()
+        if self._pool_limiter:
+            waited = await self._pool_limiter.wait()
+            pool_snapshot = await self._pool_limiter.snapshot()
+            self._log.info(
+                "FR24 pool spacing: waited=%.2fs min_interval=%.2fs next_in=%.2fs",
+                waited,
+                pool_snapshot["min_interval"],
+                pool_snapshot["next_in"],
+            )
+        key_state, _ = await self._select_key(params)
+        await key_state.limiter.wait()
+        key_state.requests += 1
+        key_state.last_used = time.monotonic()
 
         def _sync_call() -> tuple[dict, Fr24Credits | None]:
-            response = client.transport.request(
+            response = key_state.client.transport.request(
                 "GET",
                 "/api/live/flight-positions/full",
                 params=_coerce_params(params),
@@ -152,36 +321,44 @@ class Fr24Client:
             return payload, credits
 
         try:
-            self._log.debug("FR24 request params=%s", params)
+            self._log.info(
+                "FR24 request: key=%s params=%s",
+                key_state.index + 1,
+                params,
+            )
             payload, credits = await asyncio.to_thread(_sync_call)
         except RateLimitError as exc:
-            await self._rate_limiter.cooldown(60)
-            self._log.warning("FR24 rate limit hit; backing off for 60 seconds")
+            await key_state.limiter.cooldown(60)
+            self._log.warning(
+                "FR24 rate limit hit for key %s; backing off for 60 seconds",
+                key_state.index + 1,
+            )
             error = f"{type(exc).__name__}: {exc}"
             return Fr24Response(flights=[], credits=None, error=error, rate_limited=True)
         except TransportError as exc:
-            snapshot = await self._rate_limiter.snapshot()
+            snapshot = await key_state.limiter.snapshot()
             self._log.exception(
-                "FR24 transport error params=%s limiter=%s", params, snapshot
+                "FR24 transport error key=%s params=%s limiter=%s",
+                key_state.index + 1,
+                params,
+                snapshot,
             )
             error = f"{type(exc).__name__}: {exc}"
             return Fr24Response(flights=[], credits=None, error=error, rate_limited=False)
         except Exception as exc:
-            self._log.exception("FR24 request failed params=%s", params)
+            self._log.exception(
+                "FR24 request failed key=%s params=%s",
+                key_state.index + 1,
+                params,
+            )
             error = f"{type(exc).__name__}: {exc}"
             return Fr24Response(flights=[], credits=None, error=error, rate_limited=False)
         flights = _normalize_positions(payload)
         return Fr24Response(flights=flights, credits=credits, error=None, rate_limited=False)
 
-    async def _ensure_client(self) -> Client:
-        if self._client is None:
-            self._client = Client(api_token=self._api_token)
-        return self._client
-
     async def close(self) -> None:
-        if self._client is not None:
-            await asyncio.to_thread(self._client.transport.close)
-            self._client = None
+        for key in self._keys:
+            await asyncio.to_thread(key.client.transport.close)
 
 
 class _RateLimiter:
@@ -198,6 +375,10 @@ class _RateLimiter:
         self._next_at = 0.0
         self._cooldown_until = 0.0
         self._recent = deque()
+
+    @property
+    def min_interval(self) -> float:
+        return self._min_interval
 
     async def wait(self) -> None:
         async with self._lock:

@@ -98,6 +98,29 @@ def _extract_aircraft_code(flight: dict) -> str | None:
     return None
 
 
+def _format_fr24_key_stats(stats: list[dict]) -> str:
+    if not stats:
+        return "none"
+    parts: list[str] = []
+    for item in stats:
+        index = item.get("index", 0) + 1
+        last_used = item.get("last_used_ago")
+        last_used_text = "never" if last_used is None else f"{last_used:.1f}s"
+        parts.append(
+            "key%s requests=%s last_used_ago=%s next_in=%.2fs cooldown_in=%.2fs min_interval=%.2fs recent=%s"
+            % (
+                index,
+                item.get("requests", 0),
+                last_used_text,
+                item.get("next_in", 0.0),
+                item.get("cooldown_in", 0.0),
+                item.get("min_interval", 0.0),
+                item.get("recent", 0),
+            )
+        )
+    return " | ".join(parts)
+
+
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     radius_km = 6371.0
     dlat = radians(lat2 - lat1)
@@ -267,6 +290,9 @@ async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None
                 metrics.get("airport_count", 0),
                 airport_counts_text,
             )
+            key_stats = metrics.get("fr24_key_stats")
+            if key_stats is not None:
+                log.info("FR24 key stats: %s", _format_fr24_key_stats(key_stats))
         await poller_state.sleep(sleep_for)
 
 
@@ -276,6 +302,11 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
     if not subs:
         log.info("Poll cycle skipped (no subscriptions)")
         return
+    fr24.reset_cycle_stats()
+    api_key_count = max(1, len(config.fr24_api_keys))
+    effective_request_delay_seconds = (
+        0.0 if api_key_count > 1 else config.fr24_request_delay_seconds
+    )
 
     aircraft_icao_counts: dict[str, int] = {}
     aircraft_icao_order: list[str] = []
@@ -355,13 +386,14 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
     unique_count = len(aircraft_groups) + len(airport_targets)
     total_requests = len(aircraft_batches) + len(country_codes) + len(batches)
+    effective_max_requests_per_min = config.fr24_max_requests_per_min * api_key_count
     estimated_min_seconds = 0
     if total_requests:
         estimated_min_seconds = ceil(
-            total_requests / max(1, config.fr24_max_requests_per_min)
+            total_requests / max(1, effective_max_requests_per_min)
         ) * 60
     log.info(
-        "Poll cycle start: subs=%s aircraft=%s aircraft_batches=%s airports=%s airport_batches=%s requests=%s min_cycle_seconds=%s max_requests_per_min=%s request_delay=%.1fs airport_batch_size=%s aircraft_batch_size=%s",
+        "Poll cycle start: subs=%s aircraft=%s aircraft_batches=%s airports=%s airport_batches=%s requests=%s min_cycle_seconds=%s max_requests_per_min=%s effective_max_requests_per_min=%s api_keys=%s request_delay=%.2fs effective_request_delay=%.2fs airport_batch_size=%s aircraft_batch_size=%s",
         len(subs),
         len(aircraft_groups),
         len(aircraft_batches),
@@ -370,10 +402,19 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         total_requests,
         estimated_min_seconds,
         config.fr24_max_requests_per_min,
+        effective_max_requests_per_min,
+        api_key_count,
         config.fr24_request_delay_seconds,
+        effective_request_delay_seconds,
         config.fr24_airport_batch_size,
         config.fr24_aircraft_batch_size,
     )
+    if api_key_count > 1 and config.fr24_request_delay_seconds > 0:
+        log.info(
+            "FR24 request delay disabled for multi-key: base=%.2fs effective=%.2fs",
+            config.fr24_request_delay_seconds,
+            effective_request_delay_seconds,
+        )
 
     rate_limit_notified = False
     for batch in aircraft_batches:
@@ -473,8 +514,8 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     credits=credits,
                 )
 
-                if config.fr24_request_delay_seconds > 0:
-                    await asyncio.sleep(config.fr24_request_delay_seconds)
+                if effective_request_delay_seconds > 0:
+                    await asyncio.sleep(effective_request_delay_seconds)
             continue
 
         flights = result.flights
@@ -533,8 +574,8 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 credits=credits,
             )
 
-        if config.fr24_request_delay_seconds > 0:
-            await asyncio.sleep(config.fr24_request_delay_seconds)
+        if effective_request_delay_seconds > 0:
+            await asyncio.sleep(effective_request_delay_seconds)
 
     for batch in batches:
         batch_targets = [airport_targets[code] for code in batch if code in airport_targets]
@@ -634,8 +675,8 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     credits=credits,
                 )
 
-                if config.fr24_request_delay_seconds > 0:
-                    await asyncio.sleep(config.fr24_request_delay_seconds)
+                if effective_request_delay_seconds > 0:
+                    await asyncio.sleep(effective_request_delay_seconds)
             continue
 
         flights = result.flights
@@ -710,8 +751,8 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 credits=credits,
             )
 
-        if config.fr24_request_delay_seconds > 0:
-            await asyncio.sleep(config.fr24_request_delay_seconds)
+        if effective_request_delay_seconds > 0:
+            await asyncio.sleep(effective_request_delay_seconds)
 
     for country_code in country_codes:
         target = airport_targets.get(country_code)
@@ -780,14 +821,16 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             credits=credits,
         )
 
-        if config.fr24_request_delay_seconds > 0:
-            await asyncio.sleep(config.fr24_request_delay_seconds)
+        if effective_request_delay_seconds > 0:
+            await asyncio.sleep(effective_request_delay_seconds)
 
+    key_stats = await fr24.snapshot_keys()
     return {
         "subscriptions": len(subs),
         "unique": unique_count,
         "requests": total_requests,
         "estimated_min_seconds": estimated_min_seconds,
+        "fr24_key_stats": key_stats,
         "credits_remaining": credits_remaining,
         "aircraft_count": sum(aircraft_icao_counts.values()),
         "aircraft_icao_counts": [

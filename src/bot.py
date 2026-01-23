@@ -119,7 +119,7 @@ def main() -> None:
     _configure_file_logging(config)
 
     db = Database(config.sqlite_path)
-    fr24 = Fr24Client(config.fr24_api_key, config.fr24_max_requests_per_min)
+    fr24 = Fr24Client(config.fr24_api_keys, config.fr24_max_requests_per_min)
     reference_data = ReferenceDataService(
         db,
         config.skycards_api_base,

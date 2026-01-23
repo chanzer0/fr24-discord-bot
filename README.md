@@ -40,12 +40,12 @@ Requires Python 3.11+ (matches the Docker image).
 
 ## Environment variables
 - `DISCORD_TOKEN`
-- `FR24_API_KEY`
+- `FR24_API_KEYS` (CSV of FR24 API keys)
 - `BOT_OWNER_IDS` (CSV of Discord user IDs)
 - `POLL_INTERVAL_SECONDS` (default 150)
 - `POLL_JITTER_SECONDS` (default 5)
-- `FR24_REQUEST_DELAY_SECONDS` (default 0.5)
-- `FR24_MAX_REQUESTS_PER_MIN` (default 10)
+- `FR24_REQUEST_DELAY_SECONDS` (default 0.5; only used when 1 key is configured, otherwise forced to 0)
+- `FR24_MAX_REQUESTS_PER_MIN` (default 10, per key)
 - `FR24_AIRPORT_BATCH_SIZE` (default 15, max 15)
 - `FR24_AIRCRAFT_BATCH_SIZE` (default 15, max 15)
 - `NOTIFICATION_RETENTION_DAYS` (default 7)

@@ -58,10 +58,29 @@ def _parse_owner_ids() -> list[int]:
     raise ValueError("Missing required env var: BOT_OWNER_IDS")
 
 
+def _parse_csv_required(name: str) -> list[str]:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        raise ValueError(f"Missing required env var: {name}")
+    parts = [item.strip() for item in raw.split(",") if item.strip()]
+    if not parts:
+        raise ValueError(f"{name} must contain at least one value")
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in parts:
+        if item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
+    if not unique:
+        raise ValueError(f"{name} must contain at least one value")
+    return unique
+
+
 @dataclass(frozen=True)
 class Config:
     discord_token: str
-    fr24_api_key: str
+    fr24_api_keys: list[str]
     bot_owner_ids: list[int]
     poll_interval_seconds: int
     poll_jitter_seconds: int
@@ -82,7 +101,7 @@ class Config:
 def load_config() -> Config:
     return Config(
         discord_token=_require_env("DISCORD_TOKEN"),
-        fr24_api_key=_require_env("FR24_API_KEY"),
+        fr24_api_keys=_parse_csv_required("FR24_API_KEYS"),
         bot_owner_ids=_parse_owner_ids(),
         poll_interval_seconds=_int_env("POLL_INTERVAL_SECONDS", 150),
         poll_jitter_seconds=_int_env("POLL_JITTER_SECONDS", 5),
