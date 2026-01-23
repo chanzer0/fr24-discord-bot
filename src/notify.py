@@ -136,7 +136,7 @@ class AlertView(discord.ui.View):
         sub_type: str,
         codes: list[str],
         display_code: str,
-        timeout_seconds: int = 3600,
+        timeout_seconds: float | None = None,
     ) -> None:
         super().__init__(timeout=timeout_seconds)
         self._log = logging.getLogger(__name__)
