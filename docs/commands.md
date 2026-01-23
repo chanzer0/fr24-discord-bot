@@ -41,7 +41,7 @@ Notes:
 - Run once after first deploy to seed autocomplete results.
 
 ## `/credits-remaining`
-Show the latest cached FR24 credits remaining value (updated after each FR24 API call).
+Show the latest cached FR24 credits remaining values per key (updated after each FR24 API call).
 
 ## `/info`
 Show reference data for an airport or aircraft. The response includes a JSON attachment

@@ -13,7 +13,7 @@
 - `POLL_INTERVAL_SECONDS`, `FR24_REQUEST_DELAY_SECONDS`, `FR24_AIRPORT_BATCH_SIZE`, and `FR24_AIRCRAFT_BATCH_SIZE` further pace cycles.
 - If FR24 responses indicate throttling, increase `FR24_MAX_REQUESTS_PER_MIN` only if your plan allows it.
 - Always verify current plan limits in the FR24 API documentation.
-- Each FR24 response includes credit headers; notifications display consumed/remaining credits.
+- Each FR24 response includes credit headers; notifications display consumed/remaining credits plus the masked key suffix.
 
 ## Pacing controls
 - `POLL_INTERVAL_SECONDS`: base poll cadence (default 150s).

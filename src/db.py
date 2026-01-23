@@ -62,6 +62,13 @@ CREATE TABLE IF NOT EXISTS fr24_credits (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS fr24_key_credits (
+    key_suffix TEXT PRIMARY KEY,
+    remaining INTEGER,
+    consumed INTEGER,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS bot_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -419,6 +426,7 @@ class Database:
             "notification_log": await _count("notification_log"),
             "usage_cache": await _count("usage_cache"),
             "fr24_credits": await _count("fr24_credits"),
+            "fr24_key_credits": await _count("fr24_key_credits"),
             "bot_settings": await _count("bot_settings"),
             "reference_airports": await _count("reference_airports"),
             "reference_models": await _count("reference_models"),
@@ -449,6 +457,37 @@ class Database:
                           updated_at = excluded.updated_at
             ''',
             (remaining, consumed, updated_at),
+        )
+        await self._conn.commit()
+
+    async def get_fr24_key_credits(self) -> list[dict]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            "SELECT key_suffix, remaining, consumed, updated_at FROM fr24_key_credits"
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(row) for row in rows]
+
+    async def set_fr24_key_credits(
+        self,
+        key_suffix: str,
+        remaining: int | None,
+        consumed: int | None,
+        updated_at: str,
+    ) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            INSERT INTO fr24_key_credits (key_suffix, remaining, consumed, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(key_suffix)
+            DO UPDATE SET remaining = excluded.remaining,
+                          consumed = excluded.consumed,
+                          updated_at = excluded.updated_at
+            ''',
+            (key_suffix, remaining, consumed, updated_at),
         )
         await self._conn.commit()
 

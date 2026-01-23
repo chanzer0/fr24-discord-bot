@@ -98,27 +98,37 @@ def _extract_aircraft_code(flight: dict) -> str | None:
     return None
 
 
-def _format_fr24_key_stats(stats: list[dict]) -> str:
-    if not stats:
+def _key_suffix(value: str | None) -> str:
+    if not value:
+        return "????"
+    cleaned = str(value).strip()
+    return cleaned[-4:] if cleaned else "????"
+
+
+def _format_key_credits(
+    credits_by_suffix: dict[str, dict] | None,
+    key_suffixes: list[str],
+) -> str:
+    if not key_suffixes:
         return "none"
     parts: list[str] = []
-    for item in stats:
-        index = item.get("index", 0) + 1
-        last_used = item.get("last_used_ago")
-        last_used_text = "never" if last_used is None else f"{last_used:.1f}s"
-        parts.append(
-            "key%s requests=%s last_used_ago=%s next_in=%.2fs cooldown_in=%.2fs min_interval=%.2fs recent=%s"
-            % (
-                index,
-                item.get("requests", 0),
-                last_used_text,
-                item.get("next_in", 0.0),
-                item.get("cooldown_in", 0.0),
-                item.get("min_interval", 0.0),
-                item.get("recent", 0),
-            )
-        )
-    return " | ".join(parts)
+    for suffix in key_suffixes:
+        masked = f"***{suffix}"
+        row = credits_by_suffix.get(suffix) if credits_by_suffix else None
+        if not row:
+            parts.append(f"{masked}=n/a")
+            continue
+        remaining = row.get("remaining")
+        consumed = row.get("consumed")
+        if remaining is None and consumed is None:
+            parts.append(f"{masked}=n/a")
+        elif remaining is not None and consumed is not None:
+            parts.append(f"{masked}=r{remaining} c{consumed}")
+        elif remaining is not None:
+            parts.append(f"{masked}=r{remaining}")
+        else:
+            parts.append(f"{masked}=c{consumed}")
+    return " ".join(parts)
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -267,32 +277,21 @@ async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None
         sleep_for = base_sleep + random.uniform(0, config.poll_jitter_seconds)
         if metrics:
             aircraft_counts = metrics.get("aircraft_icao_counts") or []
-            if aircraft_counts:
-                aircraft_counts_text = ", ".join(aircraft_counts)
-            else:
-                aircraft_counts_text = "none"
+            aircraft_counts_text = ", ".join(aircraft_counts) if aircraft_counts else "none"
             airport_counts = metrics.get("airport_code_counts") or []
-            if airport_counts:
-                airport_counts_text = ", ".join(airport_counts)
-            else:
-                airport_counts_text = "none"
-            credits_remaining = metrics.get("credits_remaining")
+            airport_counts_text = ", ".join(airport_counts) if airport_counts else "none"
+            credits_text = _format_key_credits(
+                metrics.get("fr24_key_credits") or {},
+                [_key_suffix(key) for key in config.fr24_api_keys],
+            )
             log.info(
-                "Poll cycle complete: subs=%s unique=%s requests=%s duration=%.1fs sleep=%.1fs credits_remaining=%s aircraft_count=%s aircraft_icao_counts=%s airport_count=%s airport_code_counts=%s",
-                metrics.get("subscriptions"),
-                metrics.get("unique"),
-                metrics.get("requests"),
+                "Poll end [dur=%.1fs sleep=%.1fs] [air=%s] [apt=%s] [credits %s]",
                 elapsed,
                 sleep_for,
-                credits_remaining if credits_remaining is not None else "n/a",
-                metrics.get("aircraft_count", 0),
                 aircraft_counts_text,
-                metrics.get("airport_count", 0),
                 airport_counts_text,
+                credits_text,
             )
-            key_stats = metrics.get("fr24_key_stats")
-            if key_stats is not None:
-                log.info("FR24 key stats: %s", _format_fr24_key_stats(key_stats))
         await poller_state.sleep(sleep_for)
 
 
@@ -307,12 +306,16 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
     effective_request_delay_seconds = (
         0.0 if api_key_count > 1 else config.fr24_request_delay_seconds
     )
+    delay_text = (
+        "0s" if effective_request_delay_seconds <= 0 else f"{effective_request_delay_seconds:.2f}s"
+    )
 
     aircraft_icao_counts: dict[str, int] = {}
     aircraft_icao_order: list[str] = []
     airport_code_counts: dict[str, int] = {}
     airport_code_order: list[str] = []
     credits_remaining: int | None = None
+    key_credits: dict[str, dict] = {}
 
     def _track_aircraft_codes(flights: list[dict]) -> None:
         for flight in flights:
@@ -393,29 +396,16 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             total_requests / max(1, effective_max_requests_per_min)
         ) * 60
     log.info(
-        "Poll cycle start: subs=%s aircraft=%s aircraft_batches=%s airports=%s airport_batches=%s requests=%s min_cycle_seconds=%s max_requests_per_min=%s effective_max_requests_per_min=%s api_keys=%s request_delay=%.2fs effective_request_delay=%.2fs airport_batch_size=%s aircraft_batch_size=%s",
+        "Poll start [subs=%s uniq=%s req=%s] [air=%s apt=%s] [keys=%s rpm=%s delay=%s]",
         len(subs),
-        len(aircraft_groups),
-        len(aircraft_batches),
-        len(airport_targets),
-        len(batches),
+        unique_count,
         total_requests,
-        estimated_min_seconds,
-        config.fr24_max_requests_per_min,
-        effective_max_requests_per_min,
+        len(aircraft_groups),
+        len(airport_targets),
         api_key_count,
-        config.fr24_request_delay_seconds,
-        effective_request_delay_seconds,
-        config.fr24_airport_batch_size,
-        config.fr24_aircraft_batch_size,
+        config.fr24_max_requests_per_min,
+        delay_text,
     )
-    if api_key_count > 1 and config.fr24_request_delay_seconds > 0:
-        log.info(
-            "FR24 request delay disabled for multi-key: base=%.2fs effective=%.2fs",
-            config.fr24_request_delay_seconds,
-            effective_request_delay_seconds,
-        )
-
     rate_limit_notified = False
     for batch in aircraft_batches:
         batch_subs = [sub for code in batch for sub in aircraft_groups.get(code, [])]
@@ -489,6 +479,17 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                         consumed=credits.consumed,
                         updated_at=datetime.now(timezone.utc).isoformat(),
                     )
+                    if fallback_result.key_suffix:
+                        await db.set_fr24_key_credits(
+                            key_suffix=fallback_result.key_suffix,
+                            remaining=credits.remaining,
+                            consumed=credits.consumed,
+                            updated_at=datetime.now(timezone.utc).isoformat(),
+                        )
+                        key_credits[fallback_result.key_suffix] = {
+                            "remaining": credits.remaining,
+                            "consumed": credits.consumed,
+                        }
 
                 log.debug(
                     "FR24 response for aircraft %s: %s flights",
@@ -512,6 +513,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     display_code=aircraft_code,
                     reference_data=reference_data,
                     credits=credits,
+                    api_key_suffix=fallback_result.key_suffix,
                 )
 
                 if effective_request_delay_seconds > 0:
@@ -527,6 +529,17 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 consumed=credits.consumed,
                 updated_at=datetime.now(timezone.utc).isoformat(),
             )
+            if result.key_suffix:
+                await db.set_fr24_key_credits(
+                    key_suffix=result.key_suffix,
+                    remaining=credits.remaining,
+                    consumed=credits.consumed,
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
+                key_credits[result.key_suffix] = {
+                    "remaining": credits.remaining,
+                    "consumed": credits.consumed,
+                }
 
         log.debug(
             "FR24 response for aircraft batch %s: %s flights",
@@ -572,6 +585,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 display_code=aircraft_code,
                 reference_data=reference_data,
                 credits=credits,
+                api_key_suffix=result.key_suffix,
             )
 
         if effective_request_delay_seconds > 0:
@@ -650,6 +664,17 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                         consumed=credits.consumed,
                         updated_at=datetime.now(timezone.utc).isoformat(),
                     )
+                    if fallback_result.key_suffix:
+                        await db.set_fr24_key_credits(
+                            key_suffix=fallback_result.key_suffix,
+                            remaining=credits.remaining,
+                            consumed=credits.consumed,
+                            updated_at=datetime.now(timezone.utc).isoformat(),
+                        )
+                        key_credits[fallback_result.key_suffix] = {
+                            "remaining": credits.remaining,
+                            "consumed": credits.consumed,
+                        }
 
                 log.debug(
                     "FR24 response for airport %s: %s flights",
@@ -673,6 +698,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     display_code=target["display_code"],
                     reference_data=reference_data,
                     credits=credits,
+                    api_key_suffix=fallback_result.key_suffix,
                 )
 
                 if effective_request_delay_seconds > 0:
@@ -688,6 +714,17 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 consumed=credits.consumed,
                 updated_at=datetime.now(timezone.utc).isoformat(),
             )
+            if result.key_suffix:
+                await db.set_fr24_key_credits(
+                    key_suffix=result.key_suffix,
+                    remaining=credits.remaining,
+                    consumed=credits.consumed,
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
+                key_credits[result.key_suffix] = {
+                    "remaining": credits.remaining,
+                    "consumed": credits.consumed,
+                }
 
         log.debug(
             "FR24 response for airport batch %s: %s flights",
@@ -749,6 +786,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 display_code=target["display_code"],
                 reference_data=reference_data,
                 credits=credits,
+                api_key_suffix=result.key_suffix,
             )
 
         if effective_request_delay_seconds > 0:
@@ -796,6 +834,17 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 consumed=credits.consumed,
                 updated_at=datetime.now(timezone.utc).isoformat(),
             )
+            if result.key_suffix:
+                await db.set_fr24_key_credits(
+                    key_suffix=result.key_suffix,
+                    remaining=credits.remaining,
+                    consumed=credits.consumed,
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
+                key_credits[result.key_suffix] = {
+                    "remaining": credits.remaining,
+                    "consumed": credits.consumed,
+                }
 
         log.debug(
             "FR24 response for airport country %s: %s flights",
@@ -819,6 +868,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             display_code=target["display_code"],
             reference_data=reference_data,
             credits=credits,
+            api_key_suffix=result.key_suffix,
         )
 
         if effective_request_delay_seconds > 0:
@@ -831,6 +881,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         "requests": total_requests,
         "estimated_min_seconds": estimated_min_seconds,
         "fr24_key_stats": key_stats,
+        "fr24_key_credits": key_credits,
         "credits_remaining": credits_remaining,
         "aircraft_count": sum(aircraft_icao_counts.values()),
         "aircraft_icao_counts": [
@@ -895,6 +946,7 @@ async def _process_flights(
     display_code: str,
     reference_data,
     credits,
+    api_key_suffix: str | None = None,
 ) -> None:
     if not flights:
         return
@@ -942,6 +994,7 @@ async def _process_flights(
                 sub_type=sub_type,
                 display_code=display_code,
                 credits=credits,
+                api_key_suffix=api_key_suffix,
                 subscription_codes=subscription_codes,
             )
             if sent:
@@ -996,6 +1049,7 @@ async def _send_notification(
     sub_type: str,
     display_code: str,
     credits,
+    api_key_suffix: str | None,
     subscription_codes: list[str],
 ) -> bool:
     log = logging.getLogger(__name__)
@@ -1013,6 +1067,7 @@ async def _send_notification(
         display_code,
         credits_consumed=getattr(credits, "consumed", None),
         credits_remaining=getattr(credits, "remaining", None),
+        api_key_suffix=api_key_suffix,
     )
     url = build_fr24_link(flight, config.fr24_web_base_url)
     view = build_view(

@@ -23,6 +23,8 @@ class Fr24Response:
     credits: Fr24Credits | None
     error: str | None
     rate_limited: bool = False
+    key_index: int | None = None
+    key_suffix: str | None = None
 
 
 def _coerce_dict(item: Any) -> dict:
@@ -96,6 +98,7 @@ def _extract_credits(headers) -> Fr24Credits | None:
 class _KeyState:
     index: int
     token: str
+    suffix: str
     client: Client
     limiter: "_RateLimiter"
     requests: int = 0
@@ -142,10 +145,12 @@ class Fr24Client:
         for idx, token in enumerate(api_tokens):
             client = Client(api_token=token)
             limiter = _RateLimiter(self._max_requests_per_min)
+            suffix = str(token).strip()[-4:] if str(token).strip() else "????"
             self._keys.append(
                 _KeyState(
                     index=idx,
                     token=token,
+                    suffix=suffix,
                     client=client,
                     limiter=limiter,
                 )
@@ -329,7 +334,14 @@ class Fr24Client:
                 key_state.index + 1,
             )
             error = f"{type(exc).__name__}: {exc}"
-            return Fr24Response(flights=[], credits=None, error=error, rate_limited=True)
+            return Fr24Response(
+                flights=[],
+                credits=None,
+                error=error,
+                rate_limited=True,
+                key_index=key_state.index,
+                key_suffix=key_state.suffix,
+            )
         except TransportError as exc:
             snapshot = await key_state.limiter.snapshot()
             self._log.exception(
@@ -339,7 +351,14 @@ class Fr24Client:
                 snapshot,
             )
             error = f"{type(exc).__name__}: {exc}"
-            return Fr24Response(flights=[], credits=None, error=error, rate_limited=False)
+            return Fr24Response(
+                flights=[],
+                credits=None,
+                error=error,
+                rate_limited=False,
+                key_index=key_state.index,
+                key_suffix=key_state.suffix,
+            )
         except Exception as exc:
             self._log.exception(
                 "FR24 request failed key=%s params=%s",
@@ -347,9 +366,23 @@ class Fr24Client:
                 params,
             )
             error = f"{type(exc).__name__}: {exc}"
-            return Fr24Response(flights=[], credits=None, error=error, rate_limited=False)
+            return Fr24Response(
+                flights=[],
+                credits=None,
+                error=error,
+                rate_limited=False,
+                key_index=key_state.index,
+                key_suffix=key_state.suffix,
+            )
         flights = _normalize_positions(payload)
-        return Fr24Response(flights=flights, credits=credits, error=None, rate_limited=False)
+        return Fr24Response(
+            flights=flights,
+            credits=credits,
+            error=None,
+            rate_limited=False,
+            key_index=key_state.index,
+            key_suffix=key_state.suffix,
+        )
 
     async def close(self) -> None:
         for key in self._keys:

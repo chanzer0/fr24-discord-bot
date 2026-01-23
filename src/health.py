@@ -42,12 +42,13 @@ async def run_startup_checks(bot, db, config) -> None:
 
     counts = await db.get_counts()
     log.info(
-        "Database counts: guild_settings=%s subscriptions=%s notification_log=%s usage_cache=%s fr24_credits=%s bot_settings=%s reference_airports=%s reference_models=%s reference_meta=%s",
+        "Database counts: guild_settings=%s subscriptions=%s notification_log=%s usage_cache=%s fr24_credits=%s fr24_key_credits=%s bot_settings=%s reference_airports=%s reference_models=%s reference_meta=%s",
         counts["guild_settings"],
         counts["subscriptions"],
         counts["notification_log"],
         counts["usage_cache"],
         counts["fr24_credits"],
+        counts["fr24_key_credits"],
         counts["bot_settings"],
         counts["reference_airports"],
         counts["reference_models"],

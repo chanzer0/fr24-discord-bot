@@ -74,8 +74,8 @@ Requires Python 3.11+ (matches the Docker image).
 - Guild, channel, and user display names are stored alongside IDs for easier admin visibility.
 
 ## Credits visibility
-- Each FR24-powered notification includes the credits consumed and remaining from the API response headers.
-- The latest credits remaining value is stored in SQLite and available via `/credits-remaining`.
+- Each FR24-powered notification includes the credits consumed/remaining plus the masked FR24 key suffix used.
+- The latest credits remaining values per key are stored in SQLite and available via `/credits-remaining`.
 
 ## Logs and startup checks
 - On startup, the bot logs configuration (non-sensitive), DB counts, and intent/voice status.

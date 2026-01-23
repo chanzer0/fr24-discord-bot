@@ -74,6 +74,7 @@ def build_embed(
     code: str,
     credits_consumed: int | None = None,
     credits_remaining: int | None = None,
+    api_key_suffix: str | None = None,
 ) -> discord.Embed:
     title = f"Aircraft match: {code}" if sub_type == "aircraft" else f"Inbound to {code}"
     flight_number = _pick_first(
@@ -115,15 +116,26 @@ def build_embed(
     if heading:
         embed.add_field(name="Heading", value=str(heading), inline=True)
 
-    footer_parts = ["Data source: Flightradar24"]
+    footer_parts: list[str] = []
     credit_parts = []
+    masked_key = None
+    if api_key_suffix:
+        cleaned = str(api_key_suffix).strip()
+        if cleaned:
+            masked_key = f"***{cleaned[-4:]}"
     if credits_consumed is not None:
-        credit_parts.append(f"Credits used: {credits_consumed}")
+        if masked_key:
+            credit_parts.append(f"Credits used: {credits_consumed} (key {masked_key})")
+        else:
+            credit_parts.append(f"Credits used: {credits_consumed}")
     if credits_remaining is not None:
         credit_parts.append(f"Remaining: {credits_remaining}")
+    if not credit_parts and masked_key:
+        credit_parts.append(f"Key: {masked_key}")
     if credit_parts:
         footer_parts.append(" | ".join(credit_parts))
-    embed.set_footer(text=" • ".join(footer_parts))
+    if footer_parts:
+        embed.set_footer(text=" | ".join(footer_parts))
     return embed
 
 
