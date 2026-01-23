@@ -108,6 +108,7 @@ def _key_suffix(value: str | None) -> str:
 def _format_key_credits(
     credits_by_suffix: dict[str, dict] | None,
     key_suffixes: list[str],
+    cycle_used_by_suffix: dict[str, int] | None = None,
 ) -> str:
     if not key_suffixes:
         return "none"
@@ -115,19 +116,22 @@ def _format_key_credits(
     for suffix in key_suffixes:
         masked = f"***{suffix}"
         row = credits_by_suffix.get(suffix) if credits_by_suffix else None
+        used = cycle_used_by_suffix.get(suffix) if cycle_used_by_suffix else None
         if not row:
-            parts.append(f"{masked}=n/a")
+            if used is None:
+                parts.append(f"{masked}=n/a")
+            else:
+                parts.append(f"{masked}=c{used}")
             continue
         remaining = row.get("remaining")
-        consumed = row.get("consumed")
-        if remaining is None and consumed is None:
+        if remaining is None and used is None:
             parts.append(f"{masked}=n/a")
-        elif remaining is not None and consumed is not None:
-            parts.append(f"{masked}=r{remaining} c{consumed}")
+        elif remaining is not None and used is not None:
+            parts.append(f"{masked}=r{remaining} c{used}")
         elif remaining is not None:
             parts.append(f"{masked}=r{remaining}")
         else:
-            parts.append(f"{masked}=c{consumed}")
+            parts.append(f"{masked}=c{used}")
     return " ".join(parts)
 
 
@@ -283,6 +287,7 @@ async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None
             credits_text = _format_key_credits(
                 metrics.get("fr24_key_credits") or {},
                 [_key_suffix(key) for key in config.fr24_api_keys],
+                metrics.get("fr24_key_used") or {},
             )
             log.info(
                 "Poll end [dur=%.1fs sleep=%.1fs] [air=%s] [apt=%s] [credits %s]",
@@ -316,6 +321,27 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
     airport_code_order: list[str] = []
     credits_remaining: int | None = None
     key_credits: dict[str, dict] = {}
+    key_cycle_used: dict[str, int] = {}
+    key_last_remaining: dict[str, int] = {}
+    key_last_consumed: dict[str, int] = {}
+    key_start_remaining: dict[str, int] = {}
+    key_start_consumed: dict[str, int] = {}
+
+    try:
+        key_rows = await db.get_fr24_key_credits()
+    except Exception:
+        log.debug("Failed to load cached FR24 key credits for cycle", exc_info=True)
+        key_rows = []
+    for row in key_rows:
+        suffix = row.get("key_suffix")
+        if not suffix:
+            continue
+        remaining = row.get("remaining")
+        consumed = row.get("consumed")
+        if remaining is not None:
+            key_start_remaining[suffix] = remaining
+        if consumed is not None:
+            key_start_consumed[suffix] = consumed
 
     def _track_aircraft_codes(flights: list[dict]) -> None:
         for flight in flights:
@@ -347,6 +373,33 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         else:
             airport_code_counts[normalized] = count
             airport_code_order.append(normalized)
+
+    def _note_key_credit_delta(key_suffix: str, credits) -> None:
+        if not key_suffix or not credits:
+            return
+        used = 0
+        if credits.remaining is not None:
+            prev = key_last_remaining.get(key_suffix)
+            if prev is None:
+                prev = key_start_remaining.get(key_suffix)
+            if prev is not None:
+                delta = prev - credits.remaining
+                if delta > 0:
+                    used = delta
+            key_last_remaining[key_suffix] = credits.remaining
+        elif credits.consumed is not None:
+            prev = key_last_consumed.get(key_suffix)
+            if prev is None:
+                prev = key_start_consumed.get(key_suffix)
+            if prev is not None:
+                delta = credits.consumed - prev
+                if delta > 0:
+                    used = delta
+            key_last_consumed[key_suffix] = credits.consumed
+        if used:
+            key_cycle_used[key_suffix] = key_cycle_used.get(key_suffix, 0) + used
+        elif key_suffix not in key_cycle_used:
+            key_cycle_used[key_suffix] = 0
 
     channel_map = await db.fetch_guild_channels()
     aircraft_groups: dict[str, list[dict]] = {}
@@ -490,6 +543,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                             "remaining": credits.remaining,
                             "consumed": credits.consumed,
                         }
+                        _note_key_credit_delta(fallback_result.key_suffix, credits)
 
                 log.debug(
                     "FR24 response for aircraft %s: %s flights",
@@ -540,6 +594,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     "remaining": credits.remaining,
                     "consumed": credits.consumed,
                 }
+                _note_key_credit_delta(result.key_suffix, credits)
 
         log.debug(
             "FR24 response for aircraft batch %s: %s flights",
@@ -675,6 +730,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                             "remaining": credits.remaining,
                             "consumed": credits.consumed,
                         }
+                        _note_key_credit_delta(fallback_result.key_suffix, credits)
 
                 log.debug(
                     "FR24 response for airport %s: %s flights",
@@ -725,6 +781,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     "remaining": credits.remaining,
                     "consumed": credits.consumed,
                 }
+                _note_key_credit_delta(result.key_suffix, credits)
 
         log.debug(
             "FR24 response for airport batch %s: %s flights",
@@ -845,6 +902,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     "remaining": credits.remaining,
                     "consumed": credits.consumed,
                 }
+                _note_key_credit_delta(result.key_suffix, credits)
 
         log.debug(
             "FR24 response for airport country %s: %s flights",
@@ -882,6 +940,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         "estimated_min_seconds": estimated_min_seconds,
         "fr24_key_stats": key_stats,
         "fr24_key_credits": key_credits,
+        "fr24_key_used": key_cycle_used,
         "credits_remaining": credits_remaining,
         "aircraft_count": sum(aircraft_icao_counts.values()),
         "aircraft_icao_counts": [
