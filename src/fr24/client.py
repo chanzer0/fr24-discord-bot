@@ -238,7 +238,7 @@ class Fr24Client:
             )
         return snapshots
 
-    async def _select_key(self, params: dict) -> tuple[_KeyState, float]:
+    async def _select_key(self) -> tuple[_KeyState, float]:
         async with self._select_lock:
             statuses: list[tuple[_KeyState, dict, float]] = []
             best_wait: float | None = None
@@ -262,12 +262,11 @@ class Fr24Client:
             self._rr_index = (selected_idx + 1) % key_count
             selected = statuses[selected_idx][0]
             status_text = self._format_key_statuses(statuses)
-            self._log.info(
-                "FR24 key select: selected=%s/%s wait=%.2fs params=%s keys=[%s]",
+            self._log.debug(
+                "FR24 key select: selected=%s/%s wait=%.2fs keys=[%s]",
                 selected.index + 1,
                 key_count,
                 best_wait,
-                params,
                 status_text,
             )
             return selected, best_wait
@@ -296,13 +295,13 @@ class Fr24Client:
         if self._pool_limiter:
             waited = await self._pool_limiter.wait()
             pool_snapshot = await self._pool_limiter.snapshot()
-            self._log.info(
+            self._log.debug(
                 "FR24 pool spacing: waited=%.2fs min_interval=%.2fs next_in=%.2fs",
                 waited,
                 pool_snapshot["min_interval"],
                 pool_snapshot["next_in"],
             )
-        key_state, _ = await self._select_key(params)
+        key_state, _ = await self._select_key()
         await key_state.limiter.wait()
         key_state.requests += 1
         key_state.last_used = time.monotonic()
@@ -321,11 +320,7 @@ class Fr24Client:
             return payload, credits
 
         try:
-            self._log.info(
-                "FR24 request: key=%s params=%s",
-                key_state.index + 1,
-                params,
-            )
+            self._log.debug("FR24 request: key=%s", key_state.index + 1)
             payload, credits = await asyncio.to_thread(_sync_call)
         except RateLimitError as exc:
             await key_state.limiter.cooldown(60)
