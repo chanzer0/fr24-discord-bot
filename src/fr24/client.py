@@ -293,11 +293,15 @@ class Fr24Client:
             return selected, best_wait
 
     async def _call_registration(self, value: str) -> Fr24Response:
-        result = await self._call({"registration": value})
+        result = await self._call({"registrations": value})
         if result.error and self.is_param_error(result.error):
-            alt = await self._call({"reg": value})
+            alt = await self._call({"registration": value})
             if not alt.error:
                 return alt
+            if alt.error and self.is_param_error(alt.error):
+                alt2 = await self._call({"reg": value})
+                if not alt2.error:
+                    return alt2
         return result
 
     @staticmethod
