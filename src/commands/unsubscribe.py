@@ -24,6 +24,8 @@ def register(tree, db, config, reference_data) -> None:
         sub_type = _resolve_subscription_type(interaction)
         if sub_type not in ("aircraft", "airport", "registration"):
             return []
+        if sub_type == "registration":
+            return []
         codes = await db.fetch_user_subscription_codes(
             str(interaction.guild_id),
             str(interaction.user.id),
