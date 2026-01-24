@@ -7,15 +7,17 @@ Example:
 - `/set-notify-channel #flight-alerts`
 
 ## `/subscribe`
-Subscribe to aircraft type or inbound airport alerts.
+Subscribe to aircraft type, registration, or inbound airport alerts.
 
 Examples:
 - `/subscribe aircraft A388`
+- `/subscribe registration N123AB`
 - `/subscribe airport WAW`
 
 Notes:
 - Autocomplete matches airport IATA/ICAO codes from the Skycards reference datasets (IATA preferred).
 - Manual airport or aircraft code input is allowed; the bot warns if it is not found in the reference data.
+- Registration codes are manual entry only (no autocomplete).
 - Notifications for the same code in a guild are combined into one message tagging all subscribers (mentions truncated if needed).
 
 ## `/unsubscribe`
@@ -23,6 +25,7 @@ Remove an existing subscription.
 
 Examples:
 - `/unsubscribe aircraft A388`
+- `/unsubscribe registration N123AB`
 - `/unsubscribe airport WAW`
 
 Notes:

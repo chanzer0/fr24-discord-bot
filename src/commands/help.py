@@ -6,8 +6,8 @@ def register(tree, db, config) -> None:
     async def help_command(interaction: discord.Interaction) -> None:
         message = (
             "Commands:\n"
-            "- /subscribe <aircraft|airport> <code>\n"
-            "- /unsubscribe <aircraft|airport> <code>\n"
+            "- /subscribe <aircraft|registration|airport> <code>\n"
+            "- /unsubscribe <aircraft|registration|airport> <code>\n"
             "- /my-subs\n"
             "- /credits-remaining\n"
             "- /info <aircraft|airport> <code>\n"

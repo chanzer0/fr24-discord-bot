@@ -218,6 +218,22 @@ class Fr24Client:
         parts = [f"inbound:{code}" for code in codes]
         return await self._call({"airports": ",".join(parts)})
 
+    async def fetch_by_registration(self, registration: str) -> Fr24Response:
+        return await self._call_registration(registration)
+
+    async def fetch_by_registration_batch(self, registrations: list[str]) -> Fr24Response:
+        cleaned = [
+            str(code).strip().upper().replace(" ", "")
+            for code in registrations
+            if str(code).strip()
+        ]
+        cleaned = [code for code in cleaned if code]
+        if not cleaned:
+            return Fr24Response(flights=[], credits=None, error=None, rate_limited=False)
+        if len(cleaned) == 1:
+            return await self.fetch_by_registration(cleaned[0])
+        return await self._call_registration(",".join(cleaned))
+
     def reset_cycle_stats(self) -> None:
         for key in self._keys:
             key.requests = 0
@@ -275,6 +291,14 @@ class Fr24Client:
                 status_text,
             )
             return selected, best_wait
+
+    async def _call_registration(self, value: str) -> Fr24Response:
+        result = await self._call({"registration": value})
+        if result.error and self.is_param_error(result.error):
+            alt = await self._call({"reg": value})
+            if not alt.error:
+                return alt
+        return result
 
     @staticmethod
     def _format_key_statuses(

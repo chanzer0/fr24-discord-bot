@@ -41,6 +41,7 @@ Before adding the repo as a template source, verify `unraid-template.xml` points
 - `FR24_MAX_REQUESTS_PER_MIN`
 - `FR24_AIRPORT_BATCH_SIZE`
 - `FR24_AIRCRAFT_BATCH_SIZE`
+- `FR24_REGISTRATION_BATCH_SIZE`
 - `NOTIFICATION_RETENTION_DAYS`
 - `SQLITE_PATH`
 - `FR24_WEB_BASE_URL`
@@ -54,7 +55,7 @@ Before adding the repo as a template source, verify `unraid-template.xml` points
 1. Invite the bot with `applications.commands` and bot scopes.
 2. Run `/set-notify-channel` as the bot owner.
 3. Run `/refresh-reference all` to populate autocomplete data.
-4. Test `/subscribe aircraft A388` or `/subscribe airport WAW`.
+4. Test `/subscribe aircraft A388`, `/subscribe registration N123AB`, or `/subscribe airport WAW`.
 
 ## Container terminal tips
 - You can open a terminal for the container in Unraid and run:

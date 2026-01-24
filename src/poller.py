@@ -98,6 +98,25 @@ def _extract_aircraft_code(flight: dict) -> str | None:
     return None
 
 
+def _normalize_registration(value: str | None) -> str | None:
+    if not value:
+        return None
+    cleaned = str(value).strip().upper().replace(" ", "")
+    if len(cleaned) < 2:
+        return None
+    if not all(ch.isalnum() or ch == "-" for ch in cleaned):
+        return None
+    return cleaned
+
+
+def _extract_registration_code(flight: dict) -> str | None:
+    for key in ("registration", "reg"):
+        normalized = _normalize_registration(flight.get(key))
+        if normalized:
+            return normalized
+    return None
+
+
 def _key_suffix(value: str | None) -> str:
     if not value:
         return "????"
@@ -282,6 +301,10 @@ async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None
         if metrics:
             aircraft_counts = metrics.get("aircraft_icao_counts") or []
             aircraft_counts_text = ", ".join(aircraft_counts) if aircraft_counts else "none"
+            registration_counts = metrics.get("registration_code_counts") or []
+            registration_counts_text = (
+                ", ".join(registration_counts) if registration_counts else "none"
+            )
             airport_counts = metrics.get("airport_code_counts") or []
             airport_counts_text = ", ".join(airport_counts) if airport_counts else "none"
             credits_text = _format_key_credits(
@@ -290,10 +313,11 @@ async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None
                 metrics.get("fr24_key_used") or {},
             )
             log.info(
-                "Poll end [dur=%.1fs sleep=%.1fs] [air=%s] [apt=%s] [credits %s]",
+                "Poll end [dur=%.1fs sleep=%.1fs] [air=%s reg=%s apt=%s] [credits %s]",
                 elapsed,
                 sleep_for,
                 aircraft_counts_text,
+                registration_counts_text,
                 airport_counts_text,
                 credits_text,
             )
@@ -317,6 +341,8 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
     aircraft_icao_counts: dict[str, int] = {}
     aircraft_icao_order: list[str] = []
+    registration_code_counts: dict[str, int] = {}
+    registration_code_order: list[str] = []
     airport_code_counts: dict[str, int] = {}
     airport_code_order: list[str] = []
     credits_remaining: int | None = None
@@ -374,6 +400,18 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             airport_code_counts[normalized] = count
             airport_code_order.append(normalized)
 
+    def _note_registration_code(code: str, count: int) -> None:
+        if not code or count <= 0:
+            return
+        normalized = _normalize_registration(code)
+        if not normalized:
+            return
+        if normalized in registration_code_counts:
+            registration_code_counts[normalized] += count
+        else:
+            registration_code_counts[normalized] = count
+            registration_code_order.append(normalized)
+
     def _note_key_credit_delta(key_suffix: str, credits) -> None:
         if not key_suffix or not credits:
             return
@@ -403,6 +441,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
     channel_map = await db.fetch_guild_channels()
     aircraft_groups: dict[str, list[dict]] = {}
+    registration_groups: dict[str, list[dict]] = {}
     airport_targets: dict[str, dict] = {}
     airport_cache: dict[str, tuple[str, str, set[str]] | None] = {}
     for sub in subs:
@@ -427,8 +466,16 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             )
             target["match_codes"].update(match_codes)
             target["subs"].append(sub)
-        else:
+        elif sub_type == "aircraft":
             aircraft_groups.setdefault(code, []).append(sub)
+        elif sub_type == "registration":
+            normalized = _normalize_registration(code)
+            if not normalized:
+                log.warning("Skipping registration code %s (invalid format).", code)
+                continue
+            registration_groups.setdefault(normalized, []).append(sub)
+        else:
+            log.warning("Skipping subscription with unknown type %s.", sub_type)
 
     batchable_codes = [
         code for code in airport_targets.keys() if len(code) in (3, 4)
@@ -439,9 +486,18 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         list(aircraft_groups.keys()),
         config.fr24_aircraft_batch_size,
     )
+    registration_batches = _chunked(
+        list(registration_groups.keys()),
+        config.fr24_registration_batch_size,
+    )
 
-    unique_count = len(aircraft_groups) + len(airport_targets)
-    total_requests = len(aircraft_batches) + len(country_codes) + len(batches)
+    unique_count = len(aircraft_groups) + len(registration_groups) + len(airport_targets)
+    total_requests = (
+        len(aircraft_batches)
+        + len(registration_batches)
+        + len(country_codes)
+        + len(batches)
+    )
     effective_max_requests_per_min = config.fr24_max_requests_per_min * api_key_count
     estimated_min_seconds = 0
     if total_requests:
@@ -449,11 +505,12 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             total_requests / max(1, effective_max_requests_per_min)
         ) * 60
     log.info(
-        "Poll start [subs=%s uniq=%s req=%s] [air=%s apt=%s] [keys=%s rpm=%s delay=%s]",
+        "Poll start [subs=%s uniq=%s req=%s] [air=%s reg=%s apt=%s] [keys=%s rpm=%s delay=%s]",
         len(subs),
         unique_count,
         total_requests,
         len(aircraft_groups),
+        len(registration_groups),
         len(airport_targets),
         api_key_count,
         config.fr24_max_requests_per_min,
@@ -638,6 +695,190 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                 flights=matched_flights,
                 sub_type="aircraft",
                 display_code=aircraft_code,
+                reference_data=reference_data,
+                credits=credits,
+                api_key_suffix=result.key_suffix,
+            )
+
+        if effective_request_delay_seconds > 0:
+            await asyncio.sleep(effective_request_delay_seconds)
+
+    for batch in registration_batches:
+        batch_subs = [sub for code in batch for sub in registration_groups.get(code, [])]
+        log.debug(
+            "Polling FR24 for registrations=%s (%s subs)",
+            ",".join(batch),
+            len(batch_subs),
+        )
+        result = await fr24.fetch_by_registration_batch(batch)
+        if result.error:
+            if result.rate_limited:
+                if not rate_limit_notified:
+                    await _notify_poll_error(
+                        bot,
+                        channel_map,
+                        config.bot_owner_ids,
+                        {sub["guild_id"] for sub in batch_subs},
+                        "FR24 rate limit hit for registration batch. Backing off for 60s.",
+                    )
+                    rate_limit_notified = True
+                continue
+            fallback_allowed = fr24.is_param_error(result.error)
+            await _notify_poll_error(
+                bot,
+                channel_map,
+                config.bot_owner_ids,
+                {sub["guild_id"] for sub in batch_subs},
+                f"FR24 request failed for registration batch {','.join(batch)}: {result.error}."
+                + (" Falling back to per-code requests." if fallback_allowed else ""),
+            )
+            if not fallback_allowed:
+                continue
+            for registration in batch:
+                entries = registration_groups.get(registration, [])
+                if not entries:
+                    continue
+                log.debug(
+                    "Fallback FR24 for registration %s (%s subs)",
+                    registration,
+                    len(entries),
+                )
+                fallback_result = await fr24.fetch_by_registration(registration)
+                if fallback_result.error:
+                    if fallback_result.rate_limited:
+                        if not rate_limit_notified:
+                            await _notify_poll_error(
+                                bot,
+                                channel_map,
+                                config.bot_owner_ids,
+                                {sub["guild_id"] for sub in entries},
+                                f"FR24 rate limit hit for registration {registration}. Backing off for 60s.",
+                            )
+                            rate_limit_notified = True
+                        continue
+                    await _notify_poll_error(
+                        bot,
+                        channel_map,
+                        config.bot_owner_ids,
+                        {sub["guild_id"] for sub in entries},
+                        f"FR24 request failed for registration {registration}: {fallback_result.error}",
+                    )
+                    continue
+
+                flights = fallback_result.flights
+                credits = fallback_result.credits
+                _note_credits(credits)
+                _track_aircraft_codes(flights)
+                _note_registration_code(registration, len(flights))
+                if credits and (credits.remaining is not None or credits.consumed is not None):
+                    await db.set_fr24_credits(
+                        remaining=credits.remaining,
+                        consumed=credits.consumed,
+                        updated_at=datetime.now(timezone.utc).isoformat(),
+                    )
+                    if fallback_result.key_suffix:
+                        await db.set_fr24_key_credits(
+                            key_suffix=fallback_result.key_suffix,
+                            remaining=credits.remaining,
+                            consumed=credits.consumed,
+                            updated_at=datetime.now(timezone.utc).isoformat(),
+                        )
+                        key_credits[fallback_result.key_suffix] = {
+                            "remaining": credits.remaining,
+                            "consumed": credits.consumed,
+                        }
+                        _note_key_credit_delta(fallback_result.key_suffix, credits)
+
+                log.debug(
+                    "FR24 response for registration %s: %s flights",
+                    registration,
+                    len(flights),
+                )
+                if flights:
+                    log.debug(
+                        "FR24 sample flight data for registration %s: %s",
+                        registration,
+                        json.dumps(flights[0], sort_keys=True, default=str),
+                    )
+                await _process_flights(
+                    bot=bot,
+                    db=db,
+                    config=config,
+                    channel_map=channel_map,
+                    subscriptions=entries,
+                    flights=flights,
+                    sub_type="registration",
+                    display_code=registration,
+                    reference_data=reference_data,
+                    credits=credits,
+                    api_key_suffix=fallback_result.key_suffix,
+                )
+
+                if effective_request_delay_seconds > 0:
+                    await asyncio.sleep(effective_request_delay_seconds)
+            continue
+
+        flights = result.flights
+        credits = result.credits
+        _note_credits(credits)
+        _track_aircraft_codes(flights)
+        if credits and (credits.remaining is not None or credits.consumed is not None):
+            await db.set_fr24_credits(
+                remaining=credits.remaining,
+                consumed=credits.consumed,
+                updated_at=datetime.now(timezone.utc).isoformat(),
+            )
+            if result.key_suffix:
+                await db.set_fr24_key_credits(
+                    key_suffix=result.key_suffix,
+                    remaining=credits.remaining,
+                    consumed=credits.consumed,
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
+                key_credits[result.key_suffix] = {
+                    "remaining": credits.remaining,
+                    "consumed": credits.consumed,
+                }
+                _note_key_credit_delta(result.key_suffix, credits)
+
+        log.debug(
+            "FR24 response for registration batch %s: %s flights",
+            ",".join(batch),
+            len(flights),
+        )
+        if flights:
+            log.debug(
+                "FR24 sample flight data for registration batch %s: %s",
+                ",".join(batch),
+                json.dumps(flights[0], sort_keys=True, default=str),
+            )
+
+        flights_by_registration: dict[str, list[dict]] = {code: [] for code in batch}
+        for flight in flights:
+            if not flight:
+                continue
+            registration = _extract_registration_code(flight)
+            if not registration:
+                continue
+            if registration in flights_by_registration:
+                flights_by_registration[registration].append(flight)
+                _note_registration_code(registration, 1)
+
+        for registration, matched_flights in flights_by_registration.items():
+            if not matched_flights:
+                continue
+            entries = registration_groups.get(registration, [])
+            if not entries:
+                continue
+            await _process_flights(
+                bot=bot,
+                db=db,
+                config=config,
+                channel_map=channel_map,
+                subscriptions=entries,
+                flights=matched_flights,
+                sub_type="registration",
+                display_code=registration,
                 reference_data=reference_data,
                 credits=credits,
                 api_key_suffix=result.key_suffix,
@@ -946,6 +1187,11 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         "aircraft_icao_counts": [
             f"{code} ({aircraft_icao_counts[code]})" for code in aircraft_icao_order
         ],
+        "registration_count": sum(registration_code_counts.values()),
+        "registration_code_counts": [
+            f"{code} ({registration_code_counts[code]})"
+            for code in registration_code_order
+        ],
         "airport_count": sum(airport_code_counts.values()),
         "airport_code_counts": [
             f"{code} ({airport_code_counts[code]})" for code in airport_code_order
@@ -1017,7 +1263,7 @@ async def _process_flights(
     for flight in flights:
         if not flight:
             continue
-        if sub_type == "aircraft":
+        if sub_type in ("aircraft", "registration"):
             if not _has_registration(flight):
                 continue
             if _is_stationary_zero(flight):

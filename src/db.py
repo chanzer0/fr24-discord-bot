@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     guild_name TEXT,
     user_id TEXT NOT NULL,
     user_name TEXT,
-    type TEXT NOT NULL CHECK (type IN ("aircraft", "airport")),
+    type TEXT NOT NULL CHECK (type IN ("aircraft", "airport", "registration")),
     code TEXT NOT NULL,
     created_at TEXT NOT NULL,
     last_checked_at TEXT,
@@ -128,6 +128,8 @@ class Database:
         await self._conn.executescript(_SCHEMA_SQL)
         await self._conn.commit()
         await self._ensure_columns()
+        await self._ensure_subscription_types()
+        await self._conn.commit()
 
     async def _ensure_columns(self) -> None:
         if not self._conn:
@@ -163,6 +165,71 @@ class Database:
             },
         )
         await self._conn.commit()
+
+    async def _ensure_subscription_types(self) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='subscriptions'"
+        ) as cur:
+            row = await cur.fetchone()
+        table_sql = row["sql"] if row else None
+        if table_sql and "registration" in table_sql:
+            return
+        await self._conn.execute("PRAGMA foreign_keys = OFF")
+        await self._conn.execute("BEGIN")
+        await self._conn.execute(
+            '''
+            CREATE TABLE subscriptions_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT NOT NULL,
+                guild_name TEXT,
+                user_id TEXT NOT NULL,
+                user_name TEXT,
+                type TEXT NOT NULL CHECK (type IN ("aircraft", "airport", "registration")),
+                code TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                last_checked_at TEXT,
+                UNIQUE (guild_id, user_id, type, code)
+            )
+            '''
+        )
+        await self._conn.execute(
+            '''
+            INSERT INTO subscriptions_new (
+                id,
+                guild_id,
+                guild_name,
+                user_id,
+                user_name,
+                type,
+                code,
+                created_at,
+                last_checked_at
+            )
+            SELECT
+                id,
+                guild_id,
+                guild_name,
+                user_id,
+                user_name,
+                type,
+                code,
+                created_at,
+                last_checked_at
+            FROM subscriptions
+            '''
+        )
+        await self._conn.execute("DROP TABLE subscriptions")
+        await self._conn.execute("ALTER TABLE subscriptions_new RENAME TO subscriptions")
+        await self._conn.execute(
+            '''
+            CREATE INDEX IF NOT EXISTS idx_subscriptions_guild_type_code
+                ON subscriptions (guild_id, type, code)
+            '''
+        )
+        await self._conn.execute("COMMIT")
+        await self._conn.execute("PRAGMA foreign_keys = ON")
 
     async def _ensure_table_columns(self, table: str, columns: dict[str, str]) -> None:
         if not self._conn:

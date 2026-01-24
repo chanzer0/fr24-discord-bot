@@ -455,7 +455,7 @@ def build_parser() -> argparse.ArgumentParser:
     subs = sub.add_parser("subs", help="List subscriptions")
     subs.add_argument("--guild")
     subs.add_argument("--user")
-    subs.add_argument("--type", choices=["aircraft", "airport"])
+    subs.add_argument("--type", choices=["aircraft", "airport", "registration"])
     subs.add_argument("--code")
 
     sub.add_parser("subs-by-user", help="Count subscriptions grouped by user")

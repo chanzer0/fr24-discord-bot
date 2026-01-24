@@ -9,7 +9,7 @@
 
 ## Data flow
 1. Bot owner runs `/set-notify-channel` to store the default channel for a guild.
-2. Users subscribe to aircraft or inbound airport codes.
+2. Users subscribe to aircraft, registration, or inbound airport codes.
 3. Poller reads all subscriptions, groups by code, and calls FR24.
 4. For each matching flight, the bot sends an embed to the guild's notify channel and tags the user.
 5. A dedupe log prevents repeated notifications for the same flight.

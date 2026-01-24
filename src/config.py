@@ -88,6 +88,7 @@ class Config:
     fr24_max_requests_per_min: int
     fr24_airport_batch_size: int
     fr24_aircraft_batch_size: int
+    fr24_registration_batch_size: int
     notification_retention_days: int
     sqlite_path: str
     fr24_web_base_url: str
@@ -110,6 +111,9 @@ def load_config() -> Config:
         fr24_airport_batch_size=min(15, max(1, _int_env("FR24_AIRPORT_BATCH_SIZE", 15))),
         fr24_aircraft_batch_size=min(
             15, max(1, _int_env("FR24_AIRCRAFT_BATCH_SIZE", 15))
+        ),
+        fr24_registration_batch_size=min(
+            15, max(1, _int_env("FR24_REGISTRATION_BATCH_SIZE", 15))
         ),
         notification_retention_days=_int_env("NOTIFICATION_RETENTION_DAYS", 7),
         sqlite_path=os.getenv("SQLITE_PATH", "/data/bot.db"),

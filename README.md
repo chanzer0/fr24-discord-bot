@@ -1,9 +1,10 @@
 # fr24-discord-bot
 
-Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound airport alerts. The bot polls FR24 on an interval and posts rich notifications in a guild-wide default channel.
+Discord bot that lets users subscribe to Flightradar24 aircraft-type, registration, or inbound airport alerts. The bot polls FR24 on an interval and posts rich notifications in a guild-wide default channel.
 
 ## Features
 - Subscribe/unsubscribe to aircraft ICAO type codes (e.g., A388, C172)
+- Subscribe/unsubscribe to registration/tail numbers (e.g., N123AB)
 - Subscribe/unsubscribe to inbound airport codes (IATA preferred, e.g., WAW or EPWA)
 - Owner-only default notification channel per guild via `/set-notify-channel`
 - Skycards-powered autocomplete for airports/models with owner refresh
@@ -15,8 +16,8 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type or inbound 
 
 ## Commands
 - `/set-notify-channel <channel>` (owner-only)
-- `/subscribe <aircraft|airport> <code>`
-- `/unsubscribe <aircraft|airport> <code>`
+- `/subscribe <aircraft|registration|airport> <code>`
+- `/unsubscribe <aircraft|registration|airport> <code>`
 - `/my-subs`
 - `/refresh-reference <airports|models|all>` (owner-only)
 - `/credits-remaining`
@@ -48,6 +49,7 @@ Requires Python 3.11+ (matches the Docker image).
 - `FR24_MAX_REQUESTS_PER_MIN` (default 10, per key)
 - `FR24_AIRPORT_BATCH_SIZE` (default 15, max 15)
 - `FR24_AIRCRAFT_BATCH_SIZE` (default 15, max 15)
+- `FR24_REGISTRATION_BATCH_SIZE` (default 15, max 15)
 - `NOTIFICATION_RETENTION_DAYS` (default 7)
 - `SQLITE_PATH` (default `/data/bot.db`)
 - `FR24_WEB_BASE_URL` (default `https://www.flightradar24.com`)

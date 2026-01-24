@@ -76,7 +76,12 @@ def build_embed(
     credits_remaining: int | None = None,
     api_key_suffix: str | None = None,
 ) -> discord.Embed:
-    title = f"Aircraft match: {code}" if sub_type == "aircraft" else f"Inbound to {code}"
+    if sub_type == "airport":
+        title = f"Inbound to {code}"
+    elif sub_type == "registration":
+        title = f"Registration match: {code}"
+    else:
+        title = f"Aircraft match: {code}"
     flight_number = _pick_first(
         flight, ["flight", "flight_number", "flight_number_iata", "flight_number_icao"]
     )

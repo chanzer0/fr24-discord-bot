@@ -63,11 +63,15 @@ def register(tree, db, config, reference_data) -> None:
             ]
         return []
 
-    @tree.command(name="subscribe", description="Subscribe to aircraft or inbound airport alerts.")
+    @tree.command(
+        name="subscribe",
+        description="Subscribe to aircraft, registration, or inbound airport alerts.",
+    )
     @app_commands.describe(subscription_type="Subscription type", code="Code")
     @app_commands.choices(
         subscription_type=[
             app_commands.Choice(name="aircraft", value="aircraft"),
+            app_commands.Choice(name="registration", value="registration"),
             app_commands.Choice(name="airport", value="airport"),
         ]
     )
@@ -139,7 +143,7 @@ def register(tree, db, config, reference_data) -> None:
                 warning = (
                     "Warning: that aircraft ICAO is not in the Skycards reference data."
                 )
-        else:
+        elif subscription_type.value == "airport":
             if not ref_found and await reference_data.has_airports():
                 warning = (
                     "Warning: that airport code is not in the Skycards reference data."

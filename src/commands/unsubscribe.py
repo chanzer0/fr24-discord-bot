@@ -22,7 +22,7 @@ def register(tree, db, config, reference_data) -> None:
         if interaction.guild_id is None:
             return []
         sub_type = _resolve_subscription_type(interaction)
-        if sub_type not in ("aircraft", "airport"):
+        if sub_type not in ("aircraft", "airport", "registration"):
             return []
         codes = await db.fetch_user_subscription_codes(
             str(interaction.guild_id),
@@ -30,6 +30,8 @@ def register(tree, db, config, reference_data) -> None:
             sub_type,
         )
         value = current.strip().upper()
+        if sub_type == "registration":
+            value = value.replace(" ", "")
         if value:
             codes = [code for code in codes if value in code]
         choices = []
@@ -39,7 +41,7 @@ def register(tree, db, config, reference_data) -> None:
                 model = await reference_data.get_model(code)
                 if model:
                     label = format_model_label(model)
-            else:
+            elif sub_type == "airport":
                 if len(code) == 3:
                     airport = await reference_data.get_airport_by_iata(code)
                 else:
@@ -51,11 +53,15 @@ def register(tree, db, config, reference_data) -> None:
                 break
         return choices
 
-    @tree.command(name="unsubscribe", description="Unsubscribe from aircraft or inbound airport alerts.")
+    @tree.command(
+        name="unsubscribe",
+        description="Unsubscribe from aircraft, registration, or inbound airport alerts.",
+    )
     @app_commands.describe(subscription_type="Subscription type", code="Code")
     @app_commands.choices(
         subscription_type=[
             app_commands.Choice(name="aircraft", value="aircraft"),
+            app_commands.Choice(name="registration", value="registration"),
             app_commands.Choice(name="airport", value="airport"),
         ]
     )
