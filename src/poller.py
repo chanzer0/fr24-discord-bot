@@ -203,14 +203,6 @@ def _is_on_ground_like(flight: dict) -> bool:
     return True
 
 
-def _is_stationary_zero(flight: dict) -> bool:
-    altitude = _get_first_numeric(flight, ("altitude", "altitude_ft", "alt"))
-    speed = _get_first_numeric(flight, ("ground_speed", "speed", "speed_kts", "gspeed"))
-    altitude_zero = altitude is None or altitude == 0
-    speed_zero = speed is None or speed == 0
-    return altitude_zero and speed_zero
-
-
 async def _resolve_airport_from_codes(codes: set[str], reference_data):
     for code in codes:
         if len(code) == 3:
@@ -248,12 +240,12 @@ async def _is_airport_alert_eligible(flight: dict, reference_data) -> bool:
     dest_codes = _extract_destination_codes(flight)
     origin_codes = _extract_origin_codes(flight)
     if dest_codes and origin_codes and dest_codes.intersection(origin_codes):
-        return not _is_stationary_zero(flight)
+        return not _is_on_ground_like(flight)
 
     dest_ref = await _resolve_airport_from_codes(dest_codes, reference_data)
     origin_ref = await _resolve_airport_from_codes(origin_codes, reference_data)
     if dest_ref and origin_ref and dest_ref.icao == origin_ref.icao:
-        return not _is_stationary_zero(flight)
+        return not _is_on_ground_like(flight)
 
     if not _is_on_ground_like(flight):
         return True
@@ -1266,7 +1258,7 @@ async def _process_flights(
         if sub_type in ("aircraft", "registration"):
             if not _has_registration(flight):
                 continue
-            if _is_stationary_zero(flight):
+            if _is_on_ground_like(flight):
                 continue
         if sub_type == "airport" and not await _is_airport_alert_eligible(flight, reference_data):
             continue
