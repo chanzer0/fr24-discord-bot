@@ -1245,6 +1245,7 @@ async def _process_flights(
     credits,
     api_key_suffix: str | None = None,
 ) -> None:
+    log = logging.getLogger(__name__)
     if not flights:
         return
 
@@ -1295,6 +1296,11 @@ async def _process_flights(
                 subscription_codes=subscription_codes,
             )
             if sent:
+                if sub_type == "airport":
+                    log.info(
+                        "Airport alert flight payload: %s",
+                        json.dumps(flight, sort_keys=True, default=str),
+                    )
                 await db.log_notifications(
                     [sub["id"] for sub in to_notify],
                     flight_id,
