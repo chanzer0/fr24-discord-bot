@@ -468,7 +468,6 @@ class Fr24Client:
                     return alt2
         return result
 
-    @staticmethod
     def _format_key_statuses(
         self,
         statuses: list[tuple[_KeyState, dict | None, float, bool, float | None]],
