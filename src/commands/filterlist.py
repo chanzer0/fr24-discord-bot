@@ -7,9 +7,9 @@ from discord import app_commands
 
 
 _FIELD_DEFS: dict[str, dict] = {
-    "manufacturers": {
+    "manufacturer": {
         "label": "Manufacturers",
-        "kind": "list",
+        "kind": "manufacturer",
         "ops": ("has", "has_any", "has_all", "contains"),
         "example": "AIRBUS",
         "example_op": "contains",
@@ -579,20 +579,24 @@ def _build_filter(
                 if not isinstance(value, list):
                     return False
                 items = [
-                    item.strip().lower() for item in value if isinstance(item, str) and item.strip()
+                    item.strip().lower()
+                    for item in value
+                    if isinstance(item, str) and item.strip()
                 ]
                 if not items:
                     return False
                 if op == "contains":
                     return any(needle in item for item in items)
-                return any(item == needle for item in items)
+                return any(item == needle or item.startswith(needle) for item in items)
 
             return _predicate, None
 
         values = [item.lower() for item in _split_csv(raw_value)]
         if not values:
             return None, f"Value must be a comma-separated list. {_format_error(field_key)}"
-        values_set = set(values)
+
+        def _matches_any(items: list[str], token: str) -> bool:
+            return any(item == token or item.startswith(token) for item in items)
 
         if op == "has_any":
 
@@ -600,12 +604,12 @@ def _build_filter(
                 value = row.get(field_key)
                 if not isinstance(value, list):
                     return False
-                items = {
+                items = [
                     item.strip().lower()
                     for item in value
                     if isinstance(item, str) and item.strip()
-                }
-                return bool(items.intersection(values_set))
+                ]
+                return any(_matches_any(items, token) for token in values)
 
             return _predicate, None
 
@@ -615,12 +619,66 @@ def _build_filter(
                 value = row.get(field_key)
                 if not isinstance(value, list):
                     return False
-                items = {
+                items = [
                     item.strip().lower()
                     for item in value
                     if isinstance(item, str) and item.strip()
-                }
-                return values_set.issubset(items)
+                ]
+                if not items:
+                    return False
+                return all(_matches_any(items, token) for token in values)
+
+            return _predicate, None
+
+    if kind == "manufacturer":
+        tokens = [item.lower() for item in _split_csv(raw_value)]
+        if not tokens:
+            return None, f"Value must be a comma-separated list. {_format_error(field_key)}"
+
+        def _get_value(row: dict) -> str | None:
+            value = row.get(field_key)
+            if isinstance(value, str):
+                return value.strip().lower()
+            return None
+
+        if op == "contains":
+
+            def _predicate(row: dict) -> bool:
+                value = _get_value(row)
+                if not value:
+                    return False
+                return any(token in value for token in tokens)
+
+            return _predicate, None
+
+        if op == "has":
+            needle = tokens[0]
+
+            def _predicate(row: dict) -> bool:
+                value = _get_value(row)
+                if not value:
+                    return False
+                return value == needle
+
+            return _predicate, None
+
+        if op == "has_any":
+
+            def _predicate(row: dict) -> bool:
+                value = _get_value(row)
+                if not value:
+                    return False
+                return value in tokens
+
+            return _predicate, None
+
+        if op == "has_all":
+
+            def _predicate(row: dict) -> bool:
+                value = _get_value(row)
+                if not value:
+                    return False
+                return all(token in value for token in tokens)
 
             return _predicate, None
 
@@ -690,6 +748,7 @@ def _log_no_matches(field_key: str, op: str, raw_value: str, rows: list[dict]) -
         list_rows = 0
         non_empty_rows = 0
         eq_match_rows = 0
+        prefix_match_rows = 0
         contains_match_rows = 0
         samples: list[str] = []
         for row in rows:
@@ -708,13 +767,56 @@ def _log_no_matches(field_key: str, op: str, raw_value: str, rows: list[dict]) -
             lowered = [item.lower() for item in items]
             if tokens and any(item in tokens for item in lowered):
                 eq_match_rows += 1
+            if tokens and any(any(item.startswith(token) for token in tokens) for item in lowered):
+                prefix_match_rows += 1
             if tokens and any(any(token in item for token in tokens) for item in lowered):
                 contains_match_rows += 1
             if len(samples) < 5:
                 samples.extend(items[:1])
         details.append(
-            "list_rows=%s non_empty_rows=%s eq_match_rows=%s contains_match_rows=%s tokens=%s samples=%s"
-            % (list_rows, non_empty_rows, eq_match_rows, contains_match_rows, tokens, samples)
+            "list_rows=%s non_empty_rows=%s eq_match_rows=%s prefix_match_rows=%s contains_match_rows=%s tokens=%s samples=%s"
+            % (
+                list_rows,
+                non_empty_rows,
+                eq_match_rows,
+                prefix_match_rows,
+                contains_match_rows,
+                tokens,
+                samples,
+            )
+        )
+
+    elif kind == "manufacturer":
+        tokens = [token.lower() for token in _split_csv(raw_value)]
+        non_empty_rows = 0
+        eq_match_rows = 0
+        contains_match_rows = 0
+        all_tokens_match_rows = 0
+        samples: list[str] = []
+        for row in rows:
+            value = row.get(field_key)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            non_empty_rows += 1
+            lowered = value.strip().lower()
+            if tokens and lowered in tokens:
+                eq_match_rows += 1
+            if tokens and any(token in lowered for token in tokens):
+                contains_match_rows += 1
+            if tokens and all(token in lowered for token in tokens):
+                all_tokens_match_rows += 1
+            if len(samples) < 5:
+                samples.append(value.strip())
+        details.append(
+            "non_empty_rows=%s eq_match_rows=%s contains_match_rows=%s all_tokens_match_rows=%s tokens=%s samples=%s"
+            % (
+                non_empty_rows,
+                eq_match_rows,
+                contains_match_rows,
+                all_tokens_match_rows,
+                tokens,
+                samples,
+            )
         )
 
     elif kind == "number":
@@ -797,7 +899,7 @@ def register(tree, db, config) -> None:
             values = _FIELD_DEFS["cardCategory"]["values"]
         elif field_key == "military":
             values = ("true", "false")
-        elif field_key == "manufacturers":
+        elif field_key == "manufacturer":
             values = _MANUFACTURER_AUTOCOMPLETE
         else:
             return []
