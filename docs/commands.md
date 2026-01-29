@@ -57,17 +57,17 @@ Examples:
 Note:
 - Run `/refresh-reference` to load the latest reference data if records are missing.
 
-## `/reglist`
+## `/filterlist`
 Generate a comma-separated list of aircraft ICAO codes for FR24 filters.
 
 Examples:
-- `/reglist field="Rarity Tier" op="=" value="uncommon"` (A380/A388)
-- `/reglist field="Rarity" op=">=" value="3.00"` (rareness/100)
-- `/reglist field="Weight" op=">=" value="200"` (tons)
-- `/reglist field="Wingspan" op="between" value="60..80"` (meters)
-- `/reglist field="Num Engines" op="in" value="2,4"`
-- `/reglist field="Manufacturers" op="contains" value="AIRBUS"`
-- `/reglist field="Military" op="is" value="true"`
+- `/filterlist field="Rarity Tier" op="=" value="uncommon"` (A380/A388)
+- `/filterlist field="Rarity" op=">=" value="3.00"` (rareness/100)
+- `/filterlist field="Weight" op=">=" value="200"` (tons)
+- `/filterlist field="Wingspan" op="between" value="60..80"` (meters)
+- `/filterlist field="Num Engines" op="in" value="2,4"`
+- `/filterlist field="Manufacturers" op="contains" value="AIRBUS"`
+- `/filterlist field="Military" op="is" value="true"`
 
 Notes:
 - Text comparisons are case-insensitive.
@@ -76,7 +76,7 @@ Notes:
 - Manufacturer autocomplete only shows values with 2+ aircraft, but manual entry accepts any value.
 - FR24 supports up to 99 ICAO codes per filter; results are split into 99-per-line chunks when needed.
 - If model details are missing, run `/refresh-reference` first.
-- Long lists are truncated in the message with a full `reglist.txt` attachment.
+- Long lists are truncated in the message with a full `filterlist.txt` attachment.
 
 ## `/logs`
 Owner-only command to view recent log lines.

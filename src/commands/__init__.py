@@ -4,7 +4,7 @@ from .logs import register as register_logs
 from .credits_remaining import register as register_credits_remaining
 from .my_subs import register as register_my_subs
 from .polling import register as register_polling
-from .reglist import register as register_reglist
+from .filterlist import register as register_filterlist
 from .refresh_reference import register as register_refresh_reference
 from .set_notify_channel import register as register_set_notify_channel
 from .subscribe import register as register_subscribe
@@ -20,6 +20,6 @@ def setup_commands(tree, db, config, fr24, reference_data, poller_state) -> None
     register_my_subs(tree, db, config, reference_data)
     register_polling(tree, db, config, poller_state)
     register_info(tree, db, config, reference_data)
-    register_reglist(tree, db, config)
+    register_filterlist(tree, db, config)
     register_logs(tree, db, config)
     register_help(tree, db, config)

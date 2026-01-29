@@ -448,7 +448,7 @@ def _format_error(field_key: str, op: str | None = None) -> str:
     example_op = meta.get("example_op") or meta["ops"][0]
     if example:
         example_bits.append(
-            f'Example: /reglist field="{field_label}" op="{example_op}" value="{example}"'
+            f'Example: /filterlist field="{field_label}" op="{example_op}" value="{example}"'
         )
     if unit_hint:
         example_bits.append(f"{field_label} values use {unit_hint}.")
@@ -722,7 +722,7 @@ def register(tree, db, config) -> None:
         return choices[:25]
 
     @tree.command(
-        name="reglist",
+        name="filterlist",
         description="Generate a comma-separated ICAO list for FR24 aircraft filters.",
     )
     @app_commands.describe(
@@ -737,7 +737,7 @@ def register(tree, db, config) -> None:
         ]
     )
     @app_commands.autocomplete(op=op_autocomplete, value=value_autocomplete)
-    async def reglist(
+    async def filterlist(
         interaction: discord.Interaction,
         field: app_commands.Choice[str],
         op: str,
@@ -808,7 +808,7 @@ def register(tree, db, config) -> None:
         file = None
         if truncated or needs_file:
             payload = "\n".join(_chunk_codes(matches)).encode("utf-8")
-            file = discord.File(io.BytesIO(payload), filename="reglist.txt")
+            file = discord.File(io.BytesIO(payload), filename="filterlist.txt")
         payload = {
             "content": f"{message}\n```\n{preview}\n```",
             "ephemeral": True,
