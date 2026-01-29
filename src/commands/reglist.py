@@ -641,11 +641,36 @@ def _build_filter(
     return None, f"Unsupported filter type. {_format_error(field_key)}"
 
 
-def _format_preview(codes: list[str], max_len: int = 1800) -> tuple[str, bool]:
-    payload = ",".join(codes)
-    if len(payload) <= max_len:
-        return payload, False
-    return payload[:max_len] + "...", True
+def _chunk_codes(codes: list[str], chunk_size: int = 99) -> list[str]:
+    return [
+        ",".join(codes[idx : idx + chunk_size])
+        for idx in range(0, len(codes), chunk_size)
+    ]
+
+
+def _format_preview(
+    codes: list[str], max_len: int = 1800, chunk_size: int = 99
+) -> tuple[str, bool]:
+    lines = _chunk_codes(codes, chunk_size)
+    if not lines:
+        return "", False
+    preview_lines: list[str] = []
+    remaining = max_len
+    truncated = False
+    for line in lines:
+        extra = len(line) + (1 if preview_lines else 0)
+        if extra > remaining:
+            truncated = True
+            break
+        preview_lines.append(line)
+        remaining -= extra
+    text = "\n".join(preview_lines)
+    if truncated and text:
+        if len(text) + 4 <= max_len:
+            text = text + "\n..."
+        else:
+            text = text[: max_len - 3] + "..."
+    return text, truncated
 
 
 def _all_ops() -> list[str]:
@@ -775,10 +800,10 @@ def register(tree, db, config) -> None:
             message += " List is truncated below; full list attached."
         file = None
         if truncated:
-            payload = ",".join(matches).encode("utf-8")
+            payload = "\n".join(_chunk_codes(matches)).encode("utf-8")
             file = discord.File(io.BytesIO(payload), filename="reglist.txt")
         payload = {
-            "content": f"{message}\n`{preview}`",
+            "content": f"{message}\n```\n{preview}\n```",
             "ephemeral": True,
         }
         if file is not None:

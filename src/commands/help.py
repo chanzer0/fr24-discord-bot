@@ -19,6 +19,7 @@ def register(tree, db, config) -> None:
             '  Example: /reglist field="Num Engines" op="in" value="2,4"\n'
             '  Example: /reglist field="Manufacturers" op="contains" value="AIRBUS"\n'
             "  **NOTE**: Manufacturer autocomplete shows only values with 2+ aircraft; you can still type any manufacturer.\n"
+            "  If more than 99 ICAO codes match, results are split into 99-per-line chunks for FR24.\n"
             '  Example: /reglist field="Military" op="is" value="true"\n'
             "- /help\n\n"
             "Owner-only commands:\n"

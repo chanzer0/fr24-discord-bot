@@ -74,6 +74,7 @@ Notes:
 - Fields supported: Manufacturers, Rarity Tier, Rarity (rareness/100), Num Observed, Num Engines,
   Wingspan (m), Seats, Speed (knots), First Flight (year), Weight (tons), Military (true/false).
 - Manufacturer autocomplete only shows values with 2+ aircraft, but manual entry accepts any value.
+- FR24 supports up to 99 ICAO codes per filter; results are split into 99-per-line chunks when needed.
 - If model details are missing, run `/refresh-reference` first.
 - Long lists are truncated in the message with a full `reglist.txt` attachment.
 
