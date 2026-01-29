@@ -796,10 +796,13 @@ def register(tree, db, config) -> None:
         matches = sorted(set(matches))
         preview, truncated = _format_preview(matches)
         message = f"Matched {len(matches)} aircraft ICAO codes."
+        needs_file = len(matches) > 99
         if truncated:
             message += " List is truncated below; full list attached."
+        elif needs_file:
+            message += " Full list attached for easy copy/paste."
         file = None
-        if truncated:
+        if truncated or needs_file:
             payload = "\n".join(_chunk_codes(matches)).encode("utf-8")
             file = discord.File(io.BytesIO(payload), filename="reglist.txt")
         payload = {
