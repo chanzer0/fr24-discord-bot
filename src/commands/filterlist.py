@@ -1,4 +1,5 @@
 import io
+import logging
 from typing import Callable
 
 import discord
@@ -673,6 +674,93 @@ def _format_preview(
     return text, truncated
 
 
+def _log_no_matches(field_key: str, op: str, raw_value: str, rows: list[dict]) -> None:
+    log = logging.getLogger(__name__)
+    meta = _FIELD_DEFS.get(field_key, {})
+    kind = meta.get("kind", "unknown")
+    total_rows = len(rows)
+    header = (
+        f"filterlist no matches field={field_key} op={op} value={raw_value!r} "
+        f"rows={total_rows} kind={kind}"
+    )
+    details: list[str] = []
+
+    if kind == "list":
+        tokens = [token.lower() for token in _split_csv(raw_value)]
+        list_rows = 0
+        non_empty_rows = 0
+        eq_match_rows = 0
+        contains_match_rows = 0
+        samples: list[str] = []
+        for row in rows:
+            value = row.get(field_key)
+            if not isinstance(value, list):
+                continue
+            list_rows += 1
+            items = [
+                item.strip()
+                for item in value
+                if isinstance(item, str) and item.strip()
+            ]
+            if not items:
+                continue
+            non_empty_rows += 1
+            lowered = [item.lower() for item in items]
+            if tokens and any(item in tokens for item in lowered):
+                eq_match_rows += 1
+            if tokens and any(any(token in item for token in tokens) for item in lowered):
+                contains_match_rows += 1
+            if len(samples) < 5:
+                samples.extend(items[:1])
+        details.append(
+            "list_rows=%s non_empty_rows=%s eq_match_rows=%s contains_match_rows=%s tokens=%s samples=%s"
+            % (list_rows, non_empty_rows, eq_match_rows, contains_match_rows, tokens, samples)
+        )
+
+    elif kind == "number":
+        values: list[float] = []
+        for row in rows:
+            value = row.get(field_key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                values.append(float(value))
+        if values:
+            details.append(
+                "numeric_rows=%s min=%s max=%s"
+                % (len(values), min(values), max(values))
+            )
+        else:
+            details.append("numeric_rows=0")
+
+    elif kind == "str":
+        non_empty = 0
+        samples: list[str] = []
+        for row in rows:
+            value = row.get(field_key)
+            if isinstance(value, str) and value.strip():
+                non_empty += 1
+                if len(samples) < 5:
+                    samples.append(value.strip())
+        details.append("non_empty_rows=%s samples=%s" % (non_empty, samples))
+
+    elif kind == "bool":
+        true_count = 0
+        false_count = 0
+        missing = 0
+        for row in rows:
+            value = row.get(field_key)
+            if value is True:
+                true_count += 1
+            elif value is False:
+                false_count += 1
+            else:
+                missing += 1
+        details.append(
+            "true=%s false=%s missing=%s" % (true_count, false_count, missing)
+        )
+
+    log.info("%s %s", header, " | ".join(details) if details else "")
+
+
 def _all_ops() -> list[str]:
     ops = []
     for meta in _FIELD_DEFS.values():
@@ -787,6 +875,7 @@ def register(tree, db, config) -> None:
                     matches.append(icao.strip().upper())
 
         if not matches:
+            _log_no_matches(field_key, resolved_op, value, rows)
             await interaction.response.send_message(
                 f"No aircraft matched that filter. {_format_error(field_key)}",
                 ephemeral=True,
