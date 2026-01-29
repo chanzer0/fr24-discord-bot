@@ -795,7 +795,11 @@ def register(tree, db, config) -> None:
 
         matches = sorted(set(matches))
         preview, truncated = _format_preview(matches)
-        message = f"Matched {len(matches)} aircraft ICAO codes."
+        field_label = _FIELD_DEFS[field_key]["label"]
+        message = (
+            f'Filter: {field_label} {resolved_op} "{value}"\n'
+            f"Matched {len(matches)} aircraft ICAO codes."
+        )
         needs_file = len(matches) > 99
         if truncated:
             message += " List is truncated below; full list attached."
