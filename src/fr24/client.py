@@ -23,8 +23,16 @@ class Fr24Response:
     credits: Fr24Credits | None
     error: str | None
     rate_limited: bool = False
+    no_active_keys: bool = False
+    retry_after_seconds: int | None = None
     key_index: int | None = None
     key_suffix: str | None = None
+
+
+class NoActiveKeysError(RuntimeError):
+    def __init__(self, retry_after_seconds: float | None) -> None:
+        super().__init__("No FR24 API keys available (all parked)")
+        self.retry_after_seconds = retry_after_seconds
 
 
 def _coerce_dict(item: Any) -> dict:
@@ -103,6 +111,8 @@ class _KeyState:
     limiter: "_RateLimiter"
     requests: int = 0
     last_used: float = 0.0
+    parked_until: float | None = None
+    parked_reason: str | None = None
 
 
 class _SpacingLimiter:
@@ -182,6 +192,55 @@ class Fr24Client:
             "yes" if self._pool_limiter else "no",
         )
 
+    def _find_key_index_by_suffix(self, suffix: str) -> int | None:
+        cleaned = str(suffix).strip()
+        if not cleaned:
+            return None
+        for key in self._keys:
+            if key.suffix == cleaned:
+                return key.index
+        return None
+
+    def _active_key_count_locked(self, now: float) -> int:
+        return sum(
+            1
+            for key in self._keys
+            if not key.parked_until or key.parked_until <= now
+        )
+
+    def _next_unpark_in_locked(self, now: float) -> float | None:
+        candidates = [
+            key.parked_until
+            for key in self._keys
+            if key.parked_until and key.parked_until > now
+        ]
+        if not candidates:
+            return None
+        return max(0.0, min(candidates) - now)
+
+    def _clear_expired_parks_locked(self, now: float) -> bool:
+        changed = False
+        for key in self._keys:
+            if key.parked_until and key.parked_until <= now:
+                key.parked_until = None
+                key.parked_reason = None
+                changed = True
+        return changed
+
+    def _refresh_pool_limiter_locked(self, active_count: int) -> None:
+        per_key_min_interval = self._keys[0].limiter.min_interval
+        if active_count <= 1:
+            self._pool_limiter = None
+            return
+        pool_min_interval = per_key_min_interval / active_count
+        self._pool_limiter = _SpacingLimiter(pool_min_interval)
+        self._log.info(
+            "FR24 pool pacing updated: active_keys=%s per_key_min_interval=%.2fs pool_min_interval=%.2fs",
+            active_count,
+            per_key_min_interval,
+            pool_min_interval,
+        )
+
     async def fetch_by_aircraft(self, code: str) -> Fr24Response:
         return await self._call({"aircraft": code})
 
@@ -198,6 +257,22 @@ class Fr24Client:
             "invalid format",
             "list_type",
             "pattern",
+        )
+        return any(token in lowered for token in tokens)
+
+    @staticmethod
+    def is_credit_exhausted(error: str | None) -> bool:
+        if not error:
+            return False
+        lowered = error.lower()
+        tokens = (
+            "credit",
+            "credits",
+            "insufficient",
+            "exhausted",
+            "no credits",
+            "quota",
+            "balance",
         )
         return any(token in lowered for token in tokens)
 
@@ -241,11 +316,15 @@ class Fr24Client:
     async def snapshot_keys(self) -> list[dict]:
         snapshots: list[dict] = []
         now = time.monotonic()
+        wall_now = time.time()
         for key in self._keys:
             limiter = await key.limiter.snapshot()
             last_used_ago = None
             if key.last_used > 0:
                 last_used_ago = max(0.0, now - key.last_used)
+            parked_in = None
+            if key.parked_until and key.parked_until > wall_now:
+                parked_in = max(0.0, key.parked_until - wall_now)
             snapshots.append(
                 {
                     "index": key.index,
@@ -255,22 +334,107 @@ class Fr24Client:
                     "cooldown_in": limiter["cooldown_in"],
                     "min_interval": limiter["min_interval"],
                     "recent": limiter["recent"],
+                    "parked_until": key.parked_until,
+                    "parked_reason": key.parked_reason,
+                    "parked_in": parked_in,
                 }
             )
         return snapshots
 
+    async def active_key_count(self) -> int:
+        async with self._select_lock:
+            now = time.time()
+            changed = self._clear_expired_parks_locked(now)
+            count = sum(
+                1
+                for key in self._keys
+                if not key.parked_until or key.parked_until <= now
+            )
+            if changed:
+                self._refresh_pool_limiter_locked(count)
+            return count
+
+    async def next_unpark_in(self) -> float | None:
+        async with self._select_lock:
+            now = time.time()
+            self._clear_expired_parks_locked(now)
+            candidates = [
+                key.parked_until
+                for key in self._keys
+                if key.parked_until and key.parked_until > now
+            ]
+            if not candidates:
+                return None
+            return max(0.0, min(candidates) - now)
+
+    async def park_key_by_index(
+        self, index: int, until_epoch: float, reason: str | None
+    ) -> bool:
+        async with self._select_lock:
+            if index < 0 or index >= len(self._keys):
+                return False
+            now = time.time()
+            self._clear_expired_parks_locked(now)
+            before = self._active_key_count_locked(now)
+            key = self._keys[index]
+            key.parked_until = max(until_epoch, now)
+            key.parked_reason = reason
+            after = self._active_key_count_locked(now)
+            if after != before:
+                self._refresh_pool_limiter_locked(after)
+            return True
+
+    async def unpark_key_by_index(self, index: int) -> bool:
+        async with self._select_lock:
+            if index < 0 or index >= len(self._keys):
+                return False
+            now = time.time()
+            self._clear_expired_parks_locked(now)
+            before = self._active_key_count_locked(now)
+            key = self._keys[index]
+            key.parked_until = None
+            key.parked_reason = None
+            after = self._active_key_count_locked(now)
+            if after != before:
+                self._refresh_pool_limiter_locked(after)
+            return True
+
+    async def park_key_by_suffix(
+        self, suffix: str, until_epoch: float, reason: str | None
+    ) -> bool:
+        index = self._find_key_index_by_suffix(suffix)
+        if index is None:
+            return False
+        return await self.park_key_by_index(index, until_epoch, reason)
+
+    async def unpark_key_by_suffix(self, suffix: str) -> bool:
+        index = self._find_key_index_by_suffix(suffix)
+        if index is None:
+            return False
+        return await self.unpark_key_by_index(index)
+
     async def _select_key(self) -> tuple[_KeyState, float]:
         async with self._select_lock:
-            statuses: list[tuple[_KeyState, dict, float]] = []
+            now = time.time()
+            changed = self._clear_expired_parks_locked(now)
+            statuses: list[tuple[_KeyState, dict | None, float, bool, float | None]] = []
             best_wait: float | None = None
             for key in self._keys:
+                if key.parked_until and key.parked_until > now:
+                    statuses.append(
+                        (key, None, float("inf"), True, key.parked_until)
+                    )
+                    continue
                 snapshot = await key.limiter.snapshot()
                 wait_for = max(snapshot["next_in"], snapshot["cooldown_in"])
-                statuses.append((key, snapshot, wait_for))
+                statuses.append((key, snapshot, wait_for, False, None))
                 if best_wait is None or wait_for < best_wait:
                     best_wait = wait_for
             if best_wait is None:
-                raise RuntimeError("No FR24 API keys available")
+                if changed:
+                    self._refresh_pool_limiter_locked(0)
+                retry_after = self._next_unpark_in_locked(now)
+                raise NoActiveKeysError(retry_after)
             selected_idx = None
             key_count = len(self._keys)
             for offset in range(key_count):
@@ -282,7 +446,7 @@ class Fr24Client:
                 selected_idx = 0
             self._rr_index = (selected_idx + 1) % key_count
             selected = statuses[selected_idx][0]
-            status_text = self._format_key_statuses(statuses)
+            status_text = self._format_key_statuses(statuses, now)
             self._log.debug(
                 "FR24 key select: selected=%s/%s wait=%.2fs keys=[%s]",
                 selected.index + 1,
@@ -306,10 +470,27 @@ class Fr24Client:
 
     @staticmethod
     def _format_key_statuses(
-        statuses: list[tuple[_KeyState, dict, float]]
+        self,
+        statuses: list[tuple[_KeyState, dict | None, float, bool, float | None]],
+        now: float,
     ) -> str:
         parts: list[str] = []
-        for key, snapshot, wait_for in statuses:
+        for key, snapshot, wait_for, is_parked, parked_until in statuses:
+            if is_parked:
+                parked_in = None
+                if parked_until:
+                    parked_in = max(0.0, parked_until - now)
+                parts.append(
+                    "key%s parked_in=%.2fs requests=%s"
+                    % (
+                        key.index + 1,
+                        parked_in or 0.0,
+                        key.requests,
+                    )
+                )
+                continue
+            if snapshot is None:
+                continue
             parts.append(
                 "key%s wait=%.2fs next=%.2fs cooldown=%.2fs min=%.2fs recent=%s requests=%s"
                 % (
@@ -325,6 +506,17 @@ class Fr24Client:
         return "; ".join(parts)
 
     async def _call(self, params: dict) -> Fr24Response:
+        active_count = await self.active_key_count()
+        if active_count <= 0:
+            retry_after = await self.next_unpark_in()
+            return Fr24Response(
+                flights=[],
+                credits=None,
+                error="No active FR24 API keys available (all parked)",
+                rate_limited=False,
+                no_active_keys=True,
+                retry_after_seconds=int(retry_after) if retry_after is not None else None,
+            )
         if self._pool_limiter:
             waited = await self._pool_limiter.wait()
             pool_snapshot = await self._pool_limiter.snapshot()
@@ -334,7 +526,21 @@ class Fr24Client:
                 pool_snapshot["min_interval"],
                 pool_snapshot["next_in"],
             )
-        key_state, _ = await self._select_key()
+        try:
+            key_state, _ = await self._select_key()
+        except NoActiveKeysError as exc:
+            return Fr24Response(
+                flights=[],
+                credits=None,
+                error="No active FR24 API keys available (all parked)",
+                rate_limited=False,
+                no_active_keys=True,
+                retry_after_seconds=(
+                    int(exc.retry_after_seconds)
+                    if exc.retry_after_seconds is not None
+                    else None
+                ),
+            )
         await key_state.limiter.wait()
         key_state.requests += 1
         key_state.last_used = time.monotonic()

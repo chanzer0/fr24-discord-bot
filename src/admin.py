@@ -106,6 +106,24 @@ def _ensure_credits_table(conn: sqlite3.Connection) -> None:
         )
         '''
     )
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS fr24_key_credits (
+            key_suffix TEXT PRIMARY KEY,
+            remaining INTEGER,
+            consumed INTEGER,
+            updated_at TEXT NOT NULL,
+            parked_until TEXT,
+            parked_at TEXT,
+            parked_reason TEXT,
+            parked_notified_at TEXT
+        )
+        '''
+    )
+    _ensure_column(conn, "fr24_key_credits", "parked_until", "TEXT")
+    _ensure_column(conn, "fr24_key_credits", "parked_at", "TEXT")
+    _ensure_column(conn, "fr24_key_credits", "parked_reason", "TEXT")
+    _ensure_column(conn, "fr24_key_credits", "parked_notified_at", "TEXT")
     conn.commit()
 
 
@@ -133,6 +151,7 @@ def cmd_status(conn: sqlite3.Connection) -> None:
         "notification_log",
         "usage_cache",
         "fr24_credits",
+        "fr24_key_credits",
         "bot_settings",
         "reference_airports",
         "reference_models",

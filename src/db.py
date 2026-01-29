@@ -66,7 +66,11 @@ CREATE TABLE IF NOT EXISTS fr24_key_credits (
     key_suffix TEXT PRIMARY KEY,
     remaining INTEGER,
     consumed INTEGER,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    parked_until TEXT,
+    parked_at TEXT,
+    parked_reason TEXT,
+    parked_notified_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS bot_settings (
@@ -162,6 +166,15 @@ class Database:
             "reference_models",
             {
                 "raw_json": "TEXT",
+            },
+        )
+        await self._ensure_table_columns(
+            "fr24_key_credits",
+            {
+                "parked_until": "TEXT",
+                "parked_at": "TEXT",
+                "parked_reason": "TEXT",
+                "parked_notified_at": "TEXT",
             },
         )
         await self._conn.commit()
@@ -531,7 +544,11 @@ class Database:
         if not self._conn:
             raise RuntimeError("Database not connected")
         async with self._conn.execute(
-            "SELECT key_suffix, remaining, consumed, updated_at FROM fr24_key_credits"
+            '''
+            SELECT key_suffix, remaining, consumed, updated_at,
+                   parked_until, parked_at, parked_reason, parked_notified_at
+            FROM fr24_key_credits
+            '''
         ) as cur:
             rows = await cur.fetchall()
         return [dict(row) for row in rows]
@@ -555,6 +572,75 @@ class Database:
                           updated_at = excluded.updated_at
             ''',
             (key_suffix, remaining, consumed, updated_at),
+        )
+        await self._conn.commit()
+
+    async def set_fr24_key_parked(
+        self,
+        key_suffix: str,
+        parked_until: str | None,
+        parked_reason: str | None,
+        parked_at: str | None,
+        parked_notified_at: str | None,
+    ) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            INSERT INTO fr24_key_credits (
+                key_suffix,
+                updated_at,
+                parked_until,
+                parked_at,
+                parked_reason,
+                parked_notified_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(key_suffix)
+            DO UPDATE SET parked_until = excluded.parked_until,
+                          parked_at = excluded.parked_at,
+                          parked_reason = excluded.parked_reason,
+                          parked_notified_at = excluded.parked_notified_at
+            ''',
+            (
+                key_suffix,
+                utc_now_iso(),
+                parked_until,
+                parked_at,
+                parked_reason,
+                parked_notified_at,
+            ),
+        )
+        await self._conn.commit()
+
+    async def clear_fr24_key_parked(self, key_suffix: str) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            UPDATE fr24_key_credits
+            SET parked_until = NULL,
+                parked_at = NULL,
+                parked_reason = NULL,
+                parked_notified_at = NULL
+            WHERE key_suffix = ?
+            ''',
+            (key_suffix,),
+        )
+        await self._conn.commit()
+
+    async def set_fr24_key_parked_notified(
+        self, key_suffix: str, parked_notified_at: str
+    ) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            UPDATE fr24_key_credits
+            SET parked_notified_at = ?
+            WHERE key_suffix = ?
+            ''',
+            (parked_notified_at, key_suffix),
         )
         await self._conn.commit()
 

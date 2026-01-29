@@ -3,16 +3,23 @@ from datetime import datetime, timezone
 import discord
 
 
-def _format_timestamp(value: str | None) -> str | None:
+def _parse_iso(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError:
-        return value
+        return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return parsed.astimezone(timezone.utc)
+
+
+def _format_timestamp(value: str | None) -> str | None:
+    parsed = _parse_iso(value)
+    if not parsed:
+        return None
+    return parsed.strftime("%Y-%m-%d %H:%M UTC")
 
 
 def register(tree, db, config) -> None:
@@ -51,6 +58,8 @@ def register(tree, db, config) -> None:
             remaining = row.get("remaining")
             consumed = row.get("consumed")
             updated_at = _format_timestamp(row.get("updated_at"))
+            parked_until_dt = _parse_iso(row.get("parked_until"))
+            parked_reason = row.get("parked_reason")
             parts = []
             if remaining is not None:
                 parts.append(f"Remaining: {remaining}")
@@ -58,6 +67,12 @@ def register(tree, db, config) -> None:
                 parts.append(f"Consumed: {consumed}")
             if updated_at:
                 parts.append(f"Updated: {updated_at}")
+            if parked_until_dt and parked_until_dt > datetime.now(timezone.utc):
+                parts.append(
+                    f"Status: Parked until {parked_until_dt.strftime('%Y-%m-%d %H:%M UTC')}"
+                )
+                if parked_reason:
+                    parts.append(f"Reason: {parked_reason}")
             embed.add_field(
                 name=f"Key {idx} ({masked})",
                 value=" | ".join(parts) if parts else "No data yet",

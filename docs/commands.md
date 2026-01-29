@@ -44,7 +44,21 @@ Notes:
 - Run once after first deploy to seed autocomplete results.
 
 ## `/credits-remaining`
-Show the latest cached FR24 credits remaining values per key (updated after each FR24 API call).
+Show the latest cached FR24 credits remaining values per key (updated after each FR24 API call),
+including parked status and retry time when applicable.
+
+## `/park-key`
+Owner-only command to park an FR24 API key for 24 hours.
+
+Notes:
+- Autocomplete shows the key index and the masked suffix (e.g., `1: ***ABCD`).
+- Parking via this command does not send a guild alert.
+
+## `/unpark-key`
+Owner-only command to unpark a previously parked FR24 API key.
+
+Notes:
+- Autocomplete shows the key index and the masked suffix (e.g., `1: ***ABCD`).
 
 ## `/info`
 Show reference data for an airport or aircraft. The response includes a JSON attachment

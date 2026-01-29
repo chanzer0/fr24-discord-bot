@@ -14,6 +14,8 @@
 - If FR24 responses indicate throttling, increase `FR24_MAX_REQUESTS_PER_MIN` only if your plan allows it.
 - Always verify current plan limits in the FR24 API documentation.
 - Each FR24 response includes credit headers; notifications display consumed/remaining credits plus the masked key suffix.
+- Keys with credits remaining <= 0 are automatically parked for 24 hours and removed from rotation.
+- Pool pacing and effective request capacity are based on the number of active (unparked) keys.
 
 ## Pacing controls
 - `POLL_INTERVAL_SECONDS`: base poll cadence (default 150s).

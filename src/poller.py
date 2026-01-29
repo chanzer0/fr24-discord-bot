@@ -14,6 +14,8 @@ import discord
 
 from .notify import build_embed, build_fr24_link, build_view
 
+_KEY_PARK_DURATION = timedelta(hours=24)
+
 
 async def _resolve_airport_codes(
     code: str, reference_data
@@ -289,7 +291,13 @@ async def poll_loop(bot, db, fr24, config, poller_state, reference_data) -> None
                 log.exception("Failed to send poller error notification")
         elapsed = time.monotonic() - cycle_started
         base_sleep = max(0.0, poller_state.interval_seconds - elapsed)
-        sleep_for = base_sleep + random.uniform(0, config.poll_jitter_seconds)
+        sleep_override = None
+        if metrics:
+            sleep_override = metrics.get("sleep_override_seconds")
+        if sleep_override is not None:
+            sleep_for = max(0.0, float(sleep_override))
+        else:
+            sleep_for = base_sleep + random.uniform(0, config.poll_jitter_seconds)
         if metrics:
             aircraft_counts = metrics.get("aircraft_icao_counts") or []
             aircraft_counts_text = ", ".join(aircraft_counts) if aircraft_counts else "none"
@@ -323,13 +331,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         log.info("Poll cycle skipped (no subscriptions)")
         return
     fr24.reset_cycle_stats()
-    api_key_count = max(1, len(config.fr24_api_keys))
-    effective_request_delay_seconds = (
-        0.0 if api_key_count > 1 else config.fr24_request_delay_seconds
-    )
-    delay_text = (
-        "0s" if effective_request_delay_seconds <= 0 else f"{effective_request_delay_seconds:.2f}s"
-    )
+    api_key_total = len(config.fr24_api_keys)
 
     aircraft_icao_counts: dict[str, int] = {}
     aircraft_icao_order: list[str] = []
@@ -350,16 +352,34 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
     except Exception:
         log.debug("Failed to load cached FR24 key credits for cycle", exc_info=True)
         key_rows = []
+    key_status_by_suffix: dict[str, dict] = {}
     for row in key_rows:
         suffix = row.get("key_suffix")
         if not suffix:
             continue
+        key_status_by_suffix[suffix] = row
         remaining = row.get("remaining")
         consumed = row.get("consumed")
         if remaining is not None:
             key_start_remaining[suffix] = remaining
         if consumed is not None:
             key_start_consumed[suffix] = consumed
+
+    def _parse_iso(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    def _format_utc(value: datetime | None) -> str | None:
+        if not value:
+            return None
+        return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     def _track_aircraft_codes(flights: list[dict]) -> None:
         for flight in flights:
@@ -431,7 +451,155 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         elif key_suffix not in key_cycle_used:
             key_cycle_used[key_suffix] = 0
 
+    now = datetime.now(timezone.utc)
+    for suffix, row in list(key_status_by_suffix.items()):
+        parked_until = _parse_iso(row.get("parked_until"))
+        if parked_until and parked_until > now:
+            await fr24.park_key_by_suffix(
+                suffix, parked_until.timestamp(), row.get("parked_reason")
+            )
+        elif parked_until and parked_until <= now:
+            await fr24.unpark_key_by_suffix(suffix)
+            await db.clear_fr24_key_parked(suffix)
+            row["parked_until"] = None
+            row["parked_at"] = None
+            row["parked_reason"] = None
+            row["parked_notified_at"] = None
+
+    active_key_count = await fr24.active_key_count()
+    if active_key_count <= 0:
+        retry_in = await fr24.next_unpark_in()
+        sleep_override = None
+        retry_at = None
+        if retry_in is not None:
+            sleep_override = max(0.0, retry_in)
+            retry_at = datetime.now(timezone.utc) + timedelta(seconds=sleep_override)
+        log.info(
+            "Poll cycle skipped (all keys parked) retry_in=%s",
+            f"{sleep_override:.0f}s" if sleep_override is not None else "n/a",
+        )
+        return {
+            "no_active_keys": True,
+            "sleep_override_seconds": sleep_override,
+            "next_unpark_at": retry_at.isoformat() if retry_at else None,
+        }
+
+    effective_request_delay_seconds = (
+        0.0 if active_key_count > 1 else config.fr24_request_delay_seconds
+    )
+    delay_text = (
+        "0s"
+        if effective_request_delay_seconds <= 0
+        else f"{effective_request_delay_seconds:.2f}s"
+    )
+
     channel_map = await db.fetch_guild_channels()
+
+    async def _handle_no_active_keys(result) -> dict | None:
+        if not result.no_active_keys:
+            return None
+        retry_in = result.retry_after_seconds
+        sleep_override = None
+        retry_at = None
+        if retry_in is not None:
+            sleep_override = max(0.0, float(retry_in))
+            retry_at = datetime.now(timezone.utc) + timedelta(seconds=sleep_override)
+        log.info(
+            "Poll cycle stopped (all keys parked) retry_in=%s",
+            f"{sleep_override:.0f}s" if sleep_override is not None else "n/a",
+        )
+        return {
+            "no_active_keys": True,
+            "sleep_override_seconds": sleep_override,
+            "next_unpark_at": retry_at.isoformat() if retry_at else None,
+        }
+
+    async def _park_key(
+        result,
+        reason: str,
+        detail: str | None,
+        notify: bool = True,
+    ) -> None:
+        suffix = getattr(result, "key_suffix", None)
+        if not suffix:
+            return
+        now_local = datetime.now(timezone.utc)
+        existing = key_status_by_suffix.get(suffix)
+        existing_until = _parse_iso(existing.get("parked_until")) if existing else None
+        if existing_until and existing_until > now_local:
+            return
+        parked_until = now_local + _KEY_PARK_DURATION
+        parked_until_iso = parked_until.isoformat()
+        parked_at = now_local.isoformat()
+        notified_at = (
+            now_local.isoformat() if notify else existing.get("parked_notified_at") if existing else None
+        )
+        await db.set_fr24_key_parked(
+            key_suffix=suffix,
+            parked_until=parked_until_iso,
+            parked_reason=reason,
+            parked_at=parked_at,
+            parked_notified_at=notified_at,
+        )
+        if getattr(result, "key_index", None) is not None:
+            await fr24.park_key_by_index(
+                result.key_index, parked_until.timestamp(), reason
+            )
+        else:
+            await fr24.park_key_by_suffix(
+                suffix, parked_until.timestamp(), reason
+            )
+        key_status_by_suffix[suffix] = {
+            "key_suffix": suffix,
+            "remaining": existing.get("remaining") if existing else None,
+            "consumed": existing.get("consumed") if existing else None,
+            "updated_at": existing.get("updated_at") if existing else None,
+            "parked_until": parked_until_iso,
+            "parked_at": parked_at,
+            "parked_reason": reason,
+            "parked_notified_at": notified_at,
+        }
+        if notify:
+            until_text = _format_utc(parked_until)
+            detail_text = f" ({detail})" if detail else ""
+            message = (
+                f"FR24 key ***{suffix} parked{detail_text}; removed from rotation. "
+                f"Will retry at {until_text}."
+            )
+            await _notify_key_parked(
+                bot,
+                channel_map,
+                config.bot_owner_ids,
+                message,
+            )
+
+    async def _record_credits(result, credits) -> None:
+        _note_credits(credits)
+        if credits and (credits.remaining is not None or credits.consumed is not None):
+            await db.set_fr24_credits(
+                remaining=credits.remaining,
+                consumed=credits.consumed,
+                updated_at=datetime.now(timezone.utc).isoformat(),
+            )
+            if result.key_suffix:
+                await db.set_fr24_key_credits(
+                    key_suffix=result.key_suffix,
+                    remaining=credits.remaining,
+                    consumed=credits.consumed,
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
+                key_credits[result.key_suffix] = {
+                    "remaining": credits.remaining,
+                    "consumed": credits.consumed,
+                }
+                _note_key_credit_delta(result.key_suffix, credits)
+        if credits and credits.remaining is not None and credits.remaining <= 0:
+            await _park_key(
+                result,
+                reason="credits_exhausted",
+                detail="credits remaining 0",
+                notify=True,
+            )
     aircraft_groups: dict[str, list[dict]] = {}
     registration_groups: dict[str, list[dict]] = {}
     airport_targets: dict[str, dict] = {}
@@ -490,21 +658,24 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
         + len(country_codes)
         + len(batches)
     )
-    effective_max_requests_per_min = config.fr24_max_requests_per_min * api_key_count
+    effective_max_requests_per_min = config.fr24_max_requests_per_min * max(
+        1, active_key_count
+    )
     estimated_min_seconds = 0
     if total_requests:
         estimated_min_seconds = ceil(
             total_requests / max(1, effective_max_requests_per_min)
         ) * 60
     log.info(
-        "Poll start [subs=%s uniq=%s req=%s] [air=%s reg=%s apt=%s] [keys=%s rpm=%s delay=%s]",
+        "Poll start [subs=%s uniq=%s req=%s] [air=%s reg=%s apt=%s] [keys=%s/%s rpm=%s delay=%s]",
         len(subs),
         unique_count,
         total_requests,
         len(aircraft_groups),
         len(registration_groups),
         len(airport_targets),
-        api_key_count,
+        active_key_count,
+        api_key_total,
         config.fr24_max_requests_per_min,
         delay_text,
     )
@@ -517,7 +688,18 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             len(batch_subs),
         )
         result = await fr24.fetch_by_aircraft_batch(batch)
+        handled = await _handle_no_active_keys(result)
+        if handled:
+            return handled
         if result.error:
+            if fr24.is_credit_exhausted(result.error):
+                await _park_key(
+                    result,
+                    reason="credits_exhausted",
+                    detail="credits exhausted",
+                    notify=True,
+                )
+                continue
             if result.rate_limited:
                 if not rate_limit_notified:
                     await _notify_poll_error(
@@ -550,7 +732,18 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     len(entries),
                 )
                 fallback_result = await fr24.fetch_by_aircraft(aircraft_code)
+                handled = await _handle_no_active_keys(fallback_result)
+                if handled:
+                    return handled
                 if fallback_result.error:
+                    if fr24.is_credit_exhausted(fallback_result.error):
+                        await _park_key(
+                            fallback_result,
+                            reason="credits_exhausted",
+                            detail="credits exhausted",
+                            notify=True,
+                        )
+                        continue
                     if fallback_result.rate_limited:
                         if not rate_limit_notified:
                             await _notify_poll_error(
@@ -573,26 +766,8 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
                 flights = fallback_result.flights
                 credits = fallback_result.credits
-                _note_credits(credits)
                 _track_aircraft_codes(flights)
-                if credits and (credits.remaining is not None or credits.consumed is not None):
-                    await db.set_fr24_credits(
-                        remaining=credits.remaining,
-                        consumed=credits.consumed,
-                        updated_at=datetime.now(timezone.utc).isoformat(),
-                    )
-                    if fallback_result.key_suffix:
-                        await db.set_fr24_key_credits(
-                            key_suffix=fallback_result.key_suffix,
-                            remaining=credits.remaining,
-                            consumed=credits.consumed,
-                            updated_at=datetime.now(timezone.utc).isoformat(),
-                        )
-                        key_credits[fallback_result.key_suffix] = {
-                            "remaining": credits.remaining,
-                            "consumed": credits.consumed,
-                        }
-                        _note_key_credit_delta(fallback_result.key_suffix, credits)
+                await _record_credits(fallback_result, credits)
 
                 log.debug(
                     "FR24 response for aircraft %s: %s flights",
@@ -625,25 +800,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
         flights = result.flights
         credits = result.credits
-        _note_credits(credits)
-        if credits and (credits.remaining is not None or credits.consumed is not None):
-            await db.set_fr24_credits(
-                remaining=credits.remaining,
-                consumed=credits.consumed,
-                updated_at=datetime.now(timezone.utc).isoformat(),
-            )
-            if result.key_suffix:
-                await db.set_fr24_key_credits(
-                    key_suffix=result.key_suffix,
-                    remaining=credits.remaining,
-                    consumed=credits.consumed,
-                    updated_at=datetime.now(timezone.utc).isoformat(),
-                )
-                key_credits[result.key_suffix] = {
-                    "remaining": credits.remaining,
-                    "consumed": credits.consumed,
-                }
-                _note_key_credit_delta(result.key_suffix, credits)
+        await _record_credits(result, credits)
 
         log.debug(
             "FR24 response for aircraft batch %s: %s flights",
@@ -703,7 +860,18 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             len(batch_subs),
         )
         result = await fr24.fetch_by_registration_batch(batch)
+        handled = await _handle_no_active_keys(result)
+        if handled:
+            return handled
         if result.error:
+            if fr24.is_credit_exhausted(result.error):
+                await _park_key(
+                    result,
+                    reason="credits_exhausted",
+                    detail="credits exhausted",
+                    notify=True,
+                )
+                continue
             if result.rate_limited:
                 if not rate_limit_notified:
                     await _notify_poll_error(
@@ -736,7 +904,18 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     len(entries),
                 )
                 fallback_result = await fr24.fetch_by_registration(registration)
+                handled = await _handle_no_active_keys(fallback_result)
+                if handled:
+                    return handled
                 if fallback_result.error:
+                    if fr24.is_credit_exhausted(fallback_result.error):
+                        await _park_key(
+                            fallback_result,
+                            reason="credits_exhausted",
+                            detail="credits exhausted",
+                            notify=True,
+                        )
+                        continue
                     if fallback_result.rate_limited:
                         if not rate_limit_notified:
                             await _notify_poll_error(
@@ -759,27 +938,9 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
                 flights = fallback_result.flights
                 credits = fallback_result.credits
-                _note_credits(credits)
                 _track_aircraft_codes(flights)
                 _note_registration_code(registration, len(flights))
-                if credits and (credits.remaining is not None or credits.consumed is not None):
-                    await db.set_fr24_credits(
-                        remaining=credits.remaining,
-                        consumed=credits.consumed,
-                        updated_at=datetime.now(timezone.utc).isoformat(),
-                    )
-                    if fallback_result.key_suffix:
-                        await db.set_fr24_key_credits(
-                            key_suffix=fallback_result.key_suffix,
-                            remaining=credits.remaining,
-                            consumed=credits.consumed,
-                            updated_at=datetime.now(timezone.utc).isoformat(),
-                        )
-                        key_credits[fallback_result.key_suffix] = {
-                            "remaining": credits.remaining,
-                            "consumed": credits.consumed,
-                        }
-                        _note_key_credit_delta(fallback_result.key_suffix, credits)
+                await _record_credits(fallback_result, credits)
 
                 log.debug(
                     "FR24 response for registration %s: %s flights",
@@ -812,26 +973,8 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
         flights = result.flights
         credits = result.credits
-        _note_credits(credits)
         _track_aircraft_codes(flights)
-        if credits and (credits.remaining is not None or credits.consumed is not None):
-            await db.set_fr24_credits(
-                remaining=credits.remaining,
-                consumed=credits.consumed,
-                updated_at=datetime.now(timezone.utc).isoformat(),
-            )
-            if result.key_suffix:
-                await db.set_fr24_key_credits(
-                    key_suffix=result.key_suffix,
-                    remaining=credits.remaining,
-                    consumed=credits.consumed,
-                    updated_at=datetime.now(timezone.utc).isoformat(),
-                )
-                key_credits[result.key_suffix] = {
-                    "remaining": credits.remaining,
-                    "consumed": credits.consumed,
-                }
-                _note_key_credit_delta(result.key_suffix, credits)
+        await _record_credits(result, credits)
 
         log.debug(
             "FR24 response for registration batch %s: %s flights",
@@ -888,7 +1031,18 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             len(batch_subs),
         )
         result = await fr24.fetch_by_airports_inbound(batch)
+        handled = await _handle_no_active_keys(result)
+        if handled:
+            return handled
         if result.error:
+            if fr24.is_credit_exhausted(result.error):
+                await _park_key(
+                    result,
+                    reason="credits_exhausted",
+                    detail="credits exhausted",
+                    notify=True,
+                )
+                continue
             if result.rate_limited:
                 if not rate_limit_notified:
                     await _notify_poll_error(
@@ -921,7 +1075,18 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
                     len(target["subs"]),
                 )
                 fallback_result = await fr24.fetch_by_airport_inbound(request_code)
+                handled = await _handle_no_active_keys(fallback_result)
+                if handled:
+                    return handled
                 if fallback_result.error:
+                    if fr24.is_credit_exhausted(fallback_result.error):
+                        await _park_key(
+                            fallback_result,
+                            reason="credits_exhausted",
+                            detail="credits exhausted",
+                            notify=True,
+                        )
+                        continue
                     if fallback_result.rate_limited:
                         if not rate_limit_notified:
                             await _notify_poll_error(
@@ -944,26 +1109,8 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
                 flights = fallback_result.flights
                 credits = fallback_result.credits
-                _note_credits(credits)
                 _track_aircraft_codes(flights)
-                if credits and (credits.remaining is not None or credits.consumed is not None):
-                    await db.set_fr24_credits(
-                        remaining=credits.remaining,
-                        consumed=credits.consumed,
-                        updated_at=datetime.now(timezone.utc).isoformat(),
-                    )
-                    if fallback_result.key_suffix:
-                        await db.set_fr24_key_credits(
-                            key_suffix=fallback_result.key_suffix,
-                            remaining=credits.remaining,
-                            consumed=credits.consumed,
-                            updated_at=datetime.now(timezone.utc).isoformat(),
-                        )
-                        key_credits[fallback_result.key_suffix] = {
-                            "remaining": credits.remaining,
-                            "consumed": credits.consumed,
-                        }
-                        _note_key_credit_delta(fallback_result.key_suffix, credits)
+                await _record_credits(fallback_result, credits)
 
                 log.debug(
                     "FR24 response for airport %s: %s flights",
@@ -996,25 +1143,7 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
         flights = result.flights
         credits = result.credits
-        _note_credits(credits)
-        if credits and (credits.remaining is not None or credits.consumed is not None):
-            await db.set_fr24_credits(
-                remaining=credits.remaining,
-                consumed=credits.consumed,
-                updated_at=datetime.now(timezone.utc).isoformat(),
-            )
-            if result.key_suffix:
-                await db.set_fr24_key_credits(
-                    key_suffix=result.key_suffix,
-                    remaining=credits.remaining,
-                    consumed=credits.consumed,
-                    updated_at=datetime.now(timezone.utc).isoformat(),
-                )
-                key_credits[result.key_suffix] = {
-                    "remaining": credits.remaining,
-                    "consumed": credits.consumed,
-                }
-                _note_key_credit_delta(result.key_suffix, credits)
+        await _record_credits(result, credits)
 
         log.debug(
             "FR24 response for airport batch %s: %s flights",
@@ -1092,7 +1221,18 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
             len(target["subs"]),
         )
         result = await fr24.fetch_by_airport_inbound(country_code)
+        handled = await _handle_no_active_keys(result)
+        if handled:
+            return handled
         if result.error:
+            if fr24.is_credit_exhausted(result.error):
+                await _park_key(
+                    result,
+                    reason="credits_exhausted",
+                    detail="credits exhausted",
+                    notify=True,
+                )
+                continue
             if result.rate_limited:
                 if not rate_limit_notified:
                     await _notify_poll_error(
@@ -1115,27 +1255,9 @@ async def poll_once(bot, db, fr24, config, reference_data) -> dict | None:
 
         flights = result.flights
         credits = result.credits
-        _note_credits(credits)
         _track_aircraft_codes(flights)
         _note_airport_code(target["display_code"], len(flights))
-        if credits and (credits.remaining is not None or credits.consumed is not None):
-            await db.set_fr24_credits(
-                remaining=credits.remaining,
-                consumed=credits.consumed,
-                updated_at=datetime.now(timezone.utc).isoformat(),
-            )
-            if result.key_suffix:
-                await db.set_fr24_key_credits(
-                    key_suffix=result.key_suffix,
-                    remaining=credits.remaining,
-                    consumed=credits.consumed,
-                    updated_at=datetime.now(timezone.utc).isoformat(),
-                )
-                key_credits[result.key_suffix] = {
-                    "remaining": credits.remaining,
-                    "consumed": credits.consumed,
-                }
-                _note_key_credit_delta(result.key_suffix, credits)
+        await _record_credits(result, credits)
 
         log.debug(
             "FR24 response for airport country %s: %s flights",
@@ -1391,6 +1513,35 @@ async def _send_notification(
     return True
 
 
+
+
+async def _notify_key_parked(
+    bot,
+    channel_map: dict[str, str],
+    owner_ids: list[int],
+    message: str,
+) -> None:
+    log = logging.getLogger(__name__)
+    if not channel_map:
+        return
+    mentions = f"<@{owner_ids[0]}>" if owner_ids else ""
+    text = message.strip()
+    if len(text) > 900:
+        text = text[:897] + "..."
+    content = f"{mentions} {text}".strip()
+    for guild_id, channel_id in channel_map.items():
+        try:
+            channel = bot.get_channel(int(channel_id))
+            if channel is None:
+                channel = await bot.fetch_channel(int(channel_id))
+            await channel.send(content=content)
+        except (discord.Forbidden, discord.HTTPException, discord.NotFound) as exc:
+            log.warning(
+                "Failed to send key parked alert to guild %s channel %s: %s",
+                guild_id,
+                channel_id,
+                exc,
+            )
 
 
 async def _notify_poll_error(

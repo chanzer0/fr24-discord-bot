@@ -26,6 +26,8 @@ def register(tree, db, config) -> None:
             "- /set-notify-channel <channel>\n"
             "- /refresh-reference <airports|models|all>\n"
             "- /logs\n"
+            "- /park-key <key>\n"
+            "- /unpark-key <key>\n"
             "- /start\n"
             "- /stop\n"
             "- /set-polling-interval <seconds>"
