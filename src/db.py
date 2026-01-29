@@ -640,6 +640,37 @@ class Database:
             rows = await cur.fetchall()
         return [dict(row) for row in rows]
 
+    async def fetch_reference_model_rows(self) -> list[dict]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            '''
+            SELECT icao, manufacturer, name, raw_json
+            FROM reference_models
+            ORDER BY icao
+            '''
+        ) as cur:
+            rows = await cur.fetchall()
+        records: list[dict] = []
+        for row in rows:
+            raw_json = row["raw_json"]
+            payload: dict | None = None
+            if raw_json:
+                try:
+                    payload = json.loads(raw_json)
+                except json.JSONDecodeError:
+                    payload = None
+            if not isinstance(payload, dict):
+                payload = {}
+            if row["icao"] and "id" not in payload and "icao" not in payload:
+                payload["id"] = row["icao"]
+            if row["manufacturer"] and "manufacturer" not in payload:
+                payload["manufacturer"] = row["manufacturer"]
+            if row["name"] and "name" not in payload:
+                payload["name"] = row["name"]
+            records.append(payload)
+        return records
+
     async def get_reference_airport_record(self, code: str) -> dict | None:
         if not self._conn:
             raise RuntimeError("Database not connected")

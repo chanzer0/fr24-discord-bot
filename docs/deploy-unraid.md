@@ -56,6 +56,7 @@ Before adding the repo as a template source, verify `unraid-template.xml` points
 2. Run `/set-notify-channel` as the bot owner.
 3. Run `/refresh-reference all` to populate autocomplete data.
 4. Test `/subscribe aircraft A388`, `/subscribe registration N123AB`, or `/subscribe airport WAW`.
+5. Test `/reglist field="Rarity Tier" op="=" value="uncommon"` for A380 (A388).
 
 ## Container terminal tips
 - You can open a terminal for the container in Unraid and run:

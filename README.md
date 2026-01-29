@@ -9,6 +9,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type, registrati
 - Owner-only default notification channel per guild via `/set-notify-channel`
 - Skycards-powered autocomplete for airports/models with owner refresh
 - `/info` command returns full airport/aircraft reference records
+- `/reglist` command generates comma-separated ICAO lists for FR24 filters
 - Background polling with dedupe and backoff-friendly pacing
 - Per-guild notifications tag all subscribers for the same ICAO in a single message (mentions truncated if needed)
 - SQLite persistence with daily cleanup of stale notification logs
@@ -22,6 +23,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type, registrati
 - `/refresh-reference <airports|models|all>` (owner-only)
 - `/credits-remaining`
 - `/info <aircraft|airport> <code>`
+- `/reglist <field> <op> <value>`
 - `/logs` (owner-only)
 - `/start` (owner-only)
 - `/stop` (owner-only)

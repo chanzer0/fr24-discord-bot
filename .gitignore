@@ -6,3 +6,4 @@ data/
 *.db
 models.json
 airports.json
+docs/fr24-credits-dedupe-draft.md
