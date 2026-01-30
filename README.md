@@ -7,7 +7,9 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type, registrati
 - Subscribe/unsubscribe to registration/tail numbers (e.g., N123AB)
 - Subscribe/unsubscribe to inbound airport codes (IATA preferred, e.g., WAW or EPWA)
 - Owner-only default notification channel per guild via `/set-notify-channel`
+- Owner-only change-role mentions for Skycards reference updates via `/set-change-roles`
 - Skycards-powered autocomplete for airports/models with owner refresh
+- Automated Skycards refresh every 30 minutes with NEW/UPDATED/REMOVED changelogs
 - `/info` command returns full airport/aircraft reference records
 - `/filterlist` command generates comma-separated ICAO lists for FR24 filters
 - Background polling with dedupe and backoff-friendly pacing
@@ -17,6 +19,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type, registrati
 
 ## Commands
 - `/set-notify-channel <channel>` (owner-only)
+- `/set-change-roles <aircraft_role> <airport_role>` (owner-only)
 - `/subscribe <aircraft|registration|airport> <code>`
 - `/unsubscribe <aircraft|registration|airport> <code>`
 - `/my-subs`

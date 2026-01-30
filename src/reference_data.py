@@ -101,6 +101,57 @@ def _build_model_ref(row: dict) -> ModelRef | None:
     )
 
 
+def _payload_rows_from_rows(rows: Iterable[dict], dataset: str) -> list[dict]:
+    payload_rows: list[dict] = []
+    for row in rows:
+        raw_json = row.get("raw_json") if isinstance(row, dict) else None
+        payload: dict | None = None
+        if raw_json:
+            try:
+                payload = json.loads(raw_json)
+            except json.JSONDecodeError:
+                payload = None
+        if not isinstance(payload, dict):
+            payload = {}
+        if dataset == "models":
+            icao = _normalize_code(row.get("icao")) if isinstance(row, dict) else ""
+            if icao and "id" not in payload and "icao" not in payload:
+                payload["id"] = icao
+            manufacturer = row.get("manufacturer") if isinstance(row, dict) else None
+            if manufacturer and "manufacturer" not in payload:
+                payload["manufacturer"] = manufacturer
+            name = row.get("name") if isinstance(row, dict) else None
+            if name and "name" not in payload:
+                payload["name"] = name
+        else:
+            icao = _normalize_code(row.get("icao")) if isinstance(row, dict) else ""
+            if icao and "icao" not in payload:
+                payload["icao"] = icao
+            iata = row.get("iata") if isinstance(row, dict) else None
+            if iata and "iata" not in payload:
+                payload["iata"] = iata
+            name = row.get("name") if isinstance(row, dict) else None
+            if name and "name" not in payload:
+                payload["name"] = name
+            city = row.get("city") if isinstance(row, dict) else None
+            if city and "city" not in payload:
+                payload["city"] = city
+            place_code = row.get("place_code") if isinstance(row, dict) else None
+            if place_code and "placeCode" not in payload and "place_code" not in payload:
+                payload["placeCode"] = place_code
+            lat = row.get("lat") if isinstance(row, dict) else None
+            if lat is not None and "lat" not in payload:
+                payload["lat"] = lat
+            lon = row.get("lon") if isinstance(row, dict) else None
+            if lon is not None and "lon" not in payload:
+                payload["lon"] = lon
+            alt = row.get("alt") if isinstance(row, dict) else None
+            if alt is not None and "alt" not in payload:
+                payload["alt"] = alt
+        payload_rows.append(payload)
+    return payload_rows
+
+
 def format_airport_label(ref: AirportRef) -> str:
     code = ref.iata or ref.icao
     details_parts = [part for part in (ref.name, ref.city, ref.place_code) if part]
@@ -274,6 +325,7 @@ class ReferenceDataService:
         self._client_version = client_version
         self._cache = ReferenceDataCache()
         self._lock = asyncio.Lock()
+        self._refresh_lock = asyncio.Lock()
 
     async def load_from_db(self) -> dict[str, int]:
         airports = await self._db.fetch_reference_airports()
@@ -285,32 +337,71 @@ class ReferenceDataService:
 
     async def refresh(self, dataset: str) -> dict[str, dict]:
         log = logging.getLogger(__name__)
-        results: dict[str, dict] = {}
         if dataset not in ("airports", "models", "all"):
             raise ValueError("dataset must be airports, models, or all")
-        datasets = (dataset,) if dataset != "all" else ("airports", "models")
-        for target in datasets:
-            endpoint = "airports" if target == "airports" else "models"
-            log.info("Refreshing reference data: %s", target)
-            payload = await fetch_reference_payload(
-                self._base_url, endpoint, self._client_version
-            )
-            fetched_at = utc_now_iso()
-            if target == "airports":
-                updated_at, rows = parse_airports_payload(payload)
-                await self._db.replace_reference_airports(rows, updated_at, fetched_at)
-                async with self._lock:
-                    self._cache.set_airports(rows)
-            else:
-                updated_at, rows = parse_models_payload(payload)
-                await self._db.replace_reference_models(rows, updated_at, fetched_at)
-                async with self._lock:
-                    self._cache.set_models(rows)
-            results[target] = {
-                "rows": len(rows),
-                "updated_at": updated_at,
-                "fetched_at": fetched_at,
-            }
+        results: dict[str, dict] = {}
+        async with self._refresh_lock:
+            datasets = (dataset,) if dataset != "all" else ("airports", "models")
+            for target in datasets:
+                endpoint = "airports" if target == "airports" else "models"
+                log.info("Refreshing reference data: %s", target)
+                payload = await fetch_reference_payload(
+                    self._base_url, endpoint, self._client_version
+                )
+                fetched_at = utc_now_iso()
+                if target == "airports":
+                    updated_at, rows = parse_airports_payload(payload)
+                    await self._db.replace_reference_airports(rows, updated_at, fetched_at)
+                    async with self._lock:
+                        self._cache.set_airports(rows)
+                else:
+                    updated_at, rows = parse_models_payload(payload)
+                    await self._db.replace_reference_models(rows, updated_at, fetched_at)
+                    async with self._lock:
+                        self._cache.set_models(rows)
+                results[target] = {
+                    "rows": len(rows),
+                    "updated_at": updated_at,
+                    "fetched_at": fetched_at,
+                }
+        return results
+
+    async def refresh_with_payloads(self, dataset: str) -> dict[str, dict]:
+        log = logging.getLogger(__name__)
+        if dataset not in ("airports", "models", "all"):
+            raise ValueError("dataset must be airports, models, or all")
+        results: dict[str, dict] = {}
+        async with self._refresh_lock:
+            datasets = (dataset,) if dataset != "all" else ("airports", "models")
+            for target in datasets:
+                endpoint = "airports" if target == "airports" else "models"
+                log.info("Refreshing reference data (diff): %s", target)
+                if target == "airports":
+                    old_rows = await self._db.fetch_reference_airport_rows()
+                else:
+                    old_rows = await self._db.fetch_reference_model_rows()
+                payload = await fetch_reference_payload(
+                    self._base_url, endpoint, self._client_version
+                )
+                fetched_at = utc_now_iso()
+                if target == "airports":
+                    updated_at, rows = parse_airports_payload(payload)
+                    await self._db.replace_reference_airports(rows, updated_at, fetched_at)
+                    async with self._lock:
+                        self._cache.set_airports(rows)
+                else:
+                    updated_at, rows = parse_models_payload(payload)
+                    await self._db.replace_reference_models(rows, updated_at, fetched_at)
+                    async with self._lock:
+                        self._cache.set_models(rows)
+                new_rows = _payload_rows_from_rows(rows, target)
+                results[target] = {
+                    "rows": len(rows),
+                    "updated_at": updated_at,
+                    "fetched_at": fetched_at,
+                    "old_rows": old_rows,
+                    "new_rows": new_rows,
+                }
         return results
 
     async def search_airports(self, query: str, limit: int = 25) -> list[AirportRef]:

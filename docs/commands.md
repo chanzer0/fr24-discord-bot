@@ -6,6 +6,13 @@ Owner-only command to set the guild-wide default channel for notifications.
 Example:
 - `/set-notify-channel #flight-alerts`
 
+## `/set-change-roles`
+Owner-only command to set roles that are mentioned when Skycards reference data changes.
+
+Examples:
+- `/set-change-roles aircraft_role:@AircraftChanges airport_role:@AirportChanges`
+- `/set-change-roles aircraft_role:@AircraftChanges`
+
 ## `/subscribe`
 Subscribe to aircraft type, registration, or inbound airport alerts.
 

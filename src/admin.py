@@ -46,6 +46,10 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, col_type: 
 def _ensure_core_columns(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "guild_settings", "guild_name", "TEXT")
     _ensure_column(conn, "guild_settings", "notify_channel_name", "TEXT")
+    _ensure_column(conn, "guild_settings", "aircraft_change_role_id", "TEXT")
+    _ensure_column(conn, "guild_settings", "aircraft_change_role_name", "TEXT")
+    _ensure_column(conn, "guild_settings", "airport_change_role_id", "TEXT")
+    _ensure_column(conn, "guild_settings", "airport_change_role_name", "TEXT")
     _ensure_column(conn, "guild_settings", "updated_by_name", "TEXT")
     _ensure_column(conn, "subscriptions", "guild_name", "TEXT")
     _ensure_column(conn, "subscriptions", "user_name", "TEXT")

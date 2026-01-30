@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     guild_name TEXT,
     notify_channel_id TEXT NOT NULL,
     notify_channel_name TEXT,
+    aircraft_change_role_id TEXT,
+    aircraft_change_role_name TEXT,
+    airport_change_role_id TEXT,
+    airport_change_role_name TEXT,
     updated_by TEXT NOT NULL,
     updated_by_name TEXT,
     updated_at TEXT NOT NULL
@@ -144,6 +148,10 @@ class Database:
                 "guild_name": "TEXT",
                 "notify_channel_name": "TEXT",
                 "updated_by_name": "TEXT",
+                "aircraft_change_role_id": "TEXT",
+                "aircraft_change_role_name": "TEXT",
+                "airport_change_role_id": "TEXT",
+                "airport_change_role_name": "TEXT",
             },
         )
         await self._ensure_table_columns(
@@ -270,6 +278,8 @@ class Database:
         async with self._conn.execute(
             '''
             SELECT guild_id, guild_name, notify_channel_id, notify_channel_name,
+                   aircraft_change_role_id, aircraft_change_role_name,
+                   airport_change_role_id, airport_change_role_name,
                    updated_by, updated_by_name, updated_at
             FROM guild_settings
             WHERE guild_id = ?
@@ -287,6 +297,19 @@ class Database:
         ) as cur:
             rows = await cur.fetchall()
         return {row["guild_id"]: row["notify_channel_id"] for row in rows}
+
+    async def fetch_guild_notification_targets(self) -> list[dict]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            '''
+            SELECT guild_id, notify_channel_id,
+                   aircraft_change_role_id, airport_change_role_id
+            FROM guild_settings
+            '''
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(row) for row in rows]
 
     async def set_guild_notify_channel(
         self,
@@ -327,6 +350,43 @@ class Database:
                 updated_by,
                 updated_by_name,
                 utc_now_iso(),
+            ),
+        )
+        await self._conn.commit()
+
+    async def set_guild_change_roles(
+        self,
+        guild_id: str,
+        aircraft_role_id: str | None,
+        aircraft_role_name: str | None,
+        airport_role_id: str | None,
+        airport_role_name: str | None,
+        updated_by: str,
+        updated_by_name: str | None = None,
+    ) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            UPDATE guild_settings
+            SET aircraft_change_role_id = COALESCE(?, aircraft_change_role_id),
+                aircraft_change_role_name = COALESCE(?, aircraft_change_role_name),
+                airport_change_role_id = COALESCE(?, airport_change_role_id),
+                airport_change_role_name = COALESCE(?, airport_change_role_name),
+                updated_by = ?,
+                updated_by_name = COALESCE(?, updated_by_name),
+                updated_at = ?
+            WHERE guild_id = ?
+            ''',
+            (
+                aircraft_role_id,
+                aircraft_role_name,
+                airport_role_id,
+                airport_role_name,
+                updated_by,
+                updated_by_name,
+                utc_now_iso(),
+                guild_id,
             ),
         )
         await self._conn.commit()
@@ -725,6 +785,48 @@ class Database:
         ) as cur:
             rows = await cur.fetchall()
         return [dict(row) for row in rows]
+
+    async def fetch_reference_airport_rows(self) -> list[dict]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            '''
+            SELECT icao, iata, name, city, place_code, lat, lon, alt, raw_json
+            FROM reference_airports
+            ORDER BY icao
+            '''
+        ) as cur:
+            rows = await cur.fetchall()
+        records: list[dict] = []
+        for row in rows:
+            raw_json = row["raw_json"]
+            payload: dict | None = None
+            if raw_json:
+                try:
+                    payload = json.loads(raw_json)
+                except json.JSONDecodeError:
+                    payload = None
+            if not isinstance(payload, dict):
+                payload = {}
+            if row["icao"] and "icao" not in payload:
+                payload["icao"] = row["icao"]
+            if row["iata"] and "iata" not in payload:
+                payload["iata"] = row["iata"]
+            if row["name"] and "name" not in payload:
+                payload["name"] = row["name"]
+            if row["city"] and "city" not in payload:
+                payload["city"] = row["city"]
+            place_code = row["place_code"]
+            if place_code and "placeCode" not in payload and "place_code" not in payload:
+                payload["placeCode"] = place_code
+            if row["lat"] is not None and "lat" not in payload:
+                payload["lat"] = row["lat"]
+            if row["lon"] is not None and "lon" not in payload:
+                payload["lon"] = row["lon"]
+            if row["alt"] is not None and "alt" not in payload:
+                payload["alt"] = row["alt"]
+            records.append(payload)
+        return records
 
     async def fetch_reference_model_rows(self) -> list[dict]:
         if not self._conn:
