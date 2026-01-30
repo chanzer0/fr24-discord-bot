@@ -1,8 +1,10 @@
 discord.py>=2.3.0
 fr24sdk>=0.1.0
-httpx>=0.26,<0.28
-platformdirs>=2.0
-polars>=0.20
+httpx[http2,zstd]>=0.26,<0.28
+orjson>=3.11.0
+platformdirs>=4.3.8
+polars>=1.19.0
+protobuf==5.28.*
 aiosqlite>=0.19.0
 python-dotenv>=1.0.0
 tzdata>=2024.1
