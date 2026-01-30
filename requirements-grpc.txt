@@ -1,0 +1,1 @@
+fr24 @ git+https://github.com/abc8747/fr24

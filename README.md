@@ -75,13 +75,16 @@ Requires Python 3.11+ (matches the Docker image).
 - `LOG_LEVEL` (default `INFO`)
 
 ## Typecards dependency
-The missing type card poller uses the unofficial FR24 gRPC client. It is included in `requirements.txt`
-as a GitHub dependency, so `pip install -r requirements.txt` will fetch it.
+The missing type card poller uses the unofficial FR24 gRPC client. It is installed separately to avoid
+an `httpx` version conflict with `fr24sdk`. In Docker builds this happens automatically via
+`requirements-grpc.txt` with `--no-deps`.
 
-If you install dependencies manually, ensure this is included:
+If you install dependencies manually, install the core requirements first, then install the gRPC
+client without dependencies:
 
 ```bash
-pip install git+https://github.com/abc8747/fr24
+pip install -r requirements.txt
+pip install --no-deps -r requirements-grpc.txt
 ```
 
 ## Docker (local)
