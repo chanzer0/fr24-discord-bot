@@ -11,4 +11,5 @@ COPY requirements-grpc.txt .
 RUN pip install --no-cache-dir --no-deps -r requirements-grpc.txt
 
 COPY src ./src
+COPY all_icaos.json ./
 CMD ["python", "-m", "src.bot"]
