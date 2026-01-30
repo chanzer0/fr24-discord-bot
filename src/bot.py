@@ -15,6 +15,7 @@ from .poller import cleanup_loop, poll_loop
 from .poller_state import PollerState
 from .reference_data import ReferenceDataService
 from .reference_refresh import reference_refresh_loop
+from .typecards_poll import typecards_poll_loop
 
 
 def _configure_file_logging(config) -> None:
@@ -95,6 +96,14 @@ class FlightBot(discord.Client):
         self.loop.create_task(cleanup_loop(self.db, self.config))
         self.loop.create_task(
             reference_refresh_loop(
+                self,
+                self.db,
+                self.config,
+                self.reference_data,
+            )
+        )
+        self.loop.create_task(
+            typecards_poll_loop(
                 self,
                 self.db,
                 self.config,

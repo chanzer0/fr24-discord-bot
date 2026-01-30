@@ -13,6 +13,12 @@ Examples:
 - `/set-change-roles aircraft_role:@AircraftChanges airport_role:@AirportChanges`
 - `/set-change-roles aircraft_role:@AircraftChanges`
 
+## `/set-type-cards-role`
+Owner-only command to set the role mentioned for missing type card alerts.
+
+Example:
+- `/set-type-cards-role role:@TypeCards`
+
 ## `/subscribe`
 Subscribe to aircraft type, registration, or inbound airport alerts.
 

@@ -6,4 +6,6 @@ data/
 *.db
 models.json
 airports.json
+config_response.json
+users_response.json
 docs/fr24-credits-dedupe-draft.md

@@ -6,6 +6,7 @@
 - Poller: background task that groups subscriptions and queries FR24 once per unique code.
 - Reference data service: fetches airport/model data from Skycards and caches it for autocomplete.
 - Reference refresh loop: refreshes Skycards reference data every 30 minutes and posts changelog updates.
+- Typecards poller: queries FR24 live feed (gRPC) for missing aircraft type cards and alerts configured guilds.
 - SQLite storage: persists guild settings, subscriptions, and notification dedupe logs.
 
 ## Data flow

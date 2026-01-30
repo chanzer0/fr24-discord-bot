@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     aircraft_change_role_name TEXT,
     airport_change_role_id TEXT,
     airport_change_role_name TEXT,
+    typecards_role_id TEXT,
+    typecards_role_name TEXT,
     updated_by TEXT NOT NULL,
     updated_by_name TEXT,
     updated_at TEXT NOT NULL
@@ -49,6 +51,18 @@ CREATE TABLE IF NOT EXISTS notification_log (
     FOREIGN KEY(subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE,
     UNIQUE (subscription_id, flight_id)
 );
+
+CREATE TABLE IF NOT EXISTS typecard_notification_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    icao TEXT NOT NULL,
+    flight_id TEXT NOT NULL,
+    notified_at TEXT NOT NULL,
+    UNIQUE (guild_id, icao, flight_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_typecard_notification_log_notified_at
+    ON typecard_notification_log (notified_at);
 
 CREATE INDEX IF NOT EXISTS idx_notification_log_notified_at
     ON notification_log (notified_at);
@@ -152,6 +166,8 @@ class Database:
                 "aircraft_change_role_name": "TEXT",
                 "airport_change_role_id": "TEXT",
                 "airport_change_role_name": "TEXT",
+                "typecards_role_id": "TEXT",
+                "typecards_role_name": "TEXT",
             },
         )
         await self._ensure_table_columns(
@@ -280,6 +296,7 @@ class Database:
             SELECT guild_id, guild_name, notify_channel_id, notify_channel_name,
                    aircraft_change_role_id, aircraft_change_role_name,
                    airport_change_role_id, airport_change_role_name,
+                   typecards_role_id, typecards_role_name,
                    updated_by, updated_by_name, updated_at
             FROM guild_settings
             WHERE guild_id = ?
@@ -304,7 +321,19 @@ class Database:
         async with self._conn.execute(
             '''
             SELECT guild_id, notify_channel_id,
-                   aircraft_change_role_id, airport_change_role_id
+                   aircraft_change_role_id, airport_change_role_id, typecards_role_id
+            FROM guild_settings
+            '''
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(row) for row in rows]
+
+    async def fetch_guild_typecard_targets(self) -> list[dict]:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            '''
+            SELECT guild_id, notify_channel_id, typecards_role_id
             FROM guild_settings
             '''
         ) as cur:
@@ -383,6 +412,37 @@ class Database:
                 aircraft_role_name,
                 airport_role_id,
                 airport_role_name,
+                updated_by,
+                updated_by_name,
+                utc_now_iso(),
+                guild_id,
+            ),
+        )
+        await self._conn.commit()
+
+    async def set_guild_typecards_role(
+        self,
+        guild_id: str,
+        role_id: str | None,
+        role_name: str | None,
+        updated_by: str,
+        updated_by_name: str | None = None,
+    ) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            UPDATE guild_settings
+            SET typecards_role_id = ?,
+                typecards_role_name = ?,
+                updated_by = ?,
+                updated_by_name = COALESCE(?, updated_by_name),
+                updated_at = ?
+            WHERE guild_id = ?
+            ''',
+            (
+                role_id,
+                role_name,
                 updated_by,
                 updated_by_name,
                 utc_now_iso(),
@@ -520,6 +580,50 @@ class Database:
         await self._conn.commit()
         return await self._changes()
 
+    async def typecard_notification_logged(
+        self, guild_id: str, icao: str, flight_id: str
+    ) -> bool:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        async with self._conn.execute(
+            '''
+            SELECT 1 FROM typecard_notification_log
+            WHERE guild_id = ? AND icao = ? AND flight_id = ?
+            ''',
+            (guild_id, icao, flight_id),
+        ) as cur:
+            row = await cur.fetchone()
+        return row is not None
+
+    async def log_typecard_notification(
+        self, guild_id: str, icao: str, flight_id: str
+    ) -> None:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            '''
+            INSERT OR IGNORE INTO typecard_notification_log (
+                guild_id,
+                icao,
+                flight_id,
+                notified_at
+            )
+            VALUES (?, ?, ?, ?)
+            ''',
+            (guild_id, icao, flight_id, utc_now_iso()),
+        )
+        await self._conn.commit()
+
+    async def cleanup_typecard_notifications(self, older_than_iso: str) -> int:
+        if not self._conn:
+            raise RuntimeError("Database not connected")
+        await self._conn.execute(
+            "DELETE FROM typecard_notification_log WHERE notified_at < ?",
+            (older_than_iso,),
+        )
+        await self._conn.commit()
+        return await self._changes()
+
     async def get_usage_cache(self) -> dict | None:
         if not self._conn:
             raise RuntimeError("Database not connected")
@@ -564,6 +668,7 @@ class Database:
             "guild_settings": await _count("guild_settings"),
             "subscriptions": await _count("subscriptions"),
             "notification_log": await _count("notification_log"),
+            "typecard_notification_log": await _count("typecard_notification_log"),
             "usage_cache": await _count("usage_cache"),
             "fr24_credits": await _count("fr24_credits"),
             "fr24_key_credits": await _count("fr24_key_credits"),

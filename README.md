@@ -8,8 +8,10 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type, registrati
 - Subscribe/unsubscribe to inbound airport codes (IATA preferred, e.g., WAW or EPWA)
 - Owner-only default notification channel per guild via `/set-notify-channel`
 - Owner-only change-role mentions for Skycards reference updates via `/set-change-roles`
+- Owner-only role mentions for missing type card alerts via `/set-type-cards-role`
 - Skycards-powered autocomplete for airports/models with owner refresh
 - Automated Skycards refresh every 30 minutes with NEW/UPDATED/REMOVED changelogs
+- Missing type card alerts via FR24 live feed (gRPC) on a separate cadence
 - `/info` command returns full airport/aircraft reference records
 - `/filterlist` command generates comma-separated ICAO lists for FR24 filters
 - Background polling with dedupe and backoff-friendly pacing
@@ -20,6 +22,7 @@ Discord bot that lets users subscribe to Flightradar24 aircraft-type, registrati
 ## Commands
 - `/set-notify-channel <channel>` (owner-only)
 - `/set-change-roles <aircraft_role> <airport_role>` (owner-only)
+- `/set-type-cards-role <role>` (owner-only)
 - `/subscribe <aircraft|registration|airport> <code>`
 - `/unsubscribe <aircraft|registration|airport> <code>`
 - `/my-subs`
@@ -55,6 +58,13 @@ Requires Python 3.11+ (matches the Docker image).
 - `FR24_AIRPORT_BATCH_SIZE` (default 15, max 15)
 - `FR24_AIRCRAFT_BATCH_SIZE` (default 15, max 15)
 - `FR24_REGISTRATION_BATCH_SIZE` (default 15, max 15)
+- `TYPECARDS_POLL_INTERVAL_SECONDS` (default 900)
+- `TYPECARDS_BATCH_SIZE` (default 100)
+- `TYPECARDS_REQUEST_DELAY_SECONDS` (default 15)
+- `TYPECARDS_JITTER_SECONDS` (default 0.5)
+- `TYPECARDS_FEED_LIMIT` (default 200)
+- `TYPECARDS_TIMEOUT_SECONDS` (default 30)
+- `TYPECARDS_ICAO_LIST_PATH` (optional path to JSON list of ICAOs; defaults to `all_icaos.json`)
 - `NOTIFICATION_RETENTION_DAYS` (default 7)
 - `SQLITE_PATH` (default `/data/bot.db`)
 - `FR24_WEB_BASE_URL` (default `https://www.flightradar24.com`)
@@ -63,6 +73,16 @@ Requires Python 3.11+ (matches the Docker image).
 - `LOG_DIR` (default `/data/logs`)
 - `LOG_RETENTION_HOURS` (default 24)
 - `LOG_LEVEL` (default `INFO`)
+
+## Typecards dependency
+The missing type card poller uses the unofficial FR24 gRPC client. It is included in `requirements.txt`
+as a GitHub dependency, so `pip install -r requirements.txt` will fetch it.
+
+If you install dependencies manually, ensure this is included:
+
+```bash
+pip install git+https://github.com/abc8747/fr24
+```
 
 ## Docker (local)
 - `docker compose up --build`
@@ -76,7 +96,7 @@ Requires Python 3.11+ (matches the Docker image).
 
 ## Data retention
 - The bot stores subscription metadata and a notification dedupe log only.
-- Notification logs are pruned daily based on NOTIFICATION_RETENTION_DAYS.
+- Notification logs (including type card alerts) are pruned daily based on NOTIFICATION_RETENTION_DAYS.
 - Airport/model reference data is cached in SQLite for autocomplete.
 - Guild, channel, and user display names are stored alongside IDs for easier admin visibility.
 

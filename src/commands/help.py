@@ -25,6 +25,7 @@ def register(tree, db, config) -> None:
             "Owner-only commands:\n"
             "- /set-notify-channel <channel>\n"
             "- /set-change-roles <aircraft_role> <airport_role>\n"
+            "- /set-type-cards-role <role>\n"
             "- /refresh-reference <airports|models|all>\n"
             "- /logs\n"
             "- /park-key <key>\n"

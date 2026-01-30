@@ -1,5 +1,7 @@
 discord.py>=2.3.0
 fr24sdk>=0.1.0
+fr24 @ git+https://github.com/abc8747/fr24
+httpx>=0.24.0
 aiosqlite>=0.19.0
 python-dotenv>=1.0.0
 tzdata>=2024.1

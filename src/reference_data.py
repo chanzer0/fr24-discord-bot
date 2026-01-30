@@ -424,6 +424,10 @@ class ReferenceDataService:
         async with self._lock:
             return self._cache.get_model(icao)
 
+    async def filter_missing_models(self, icaos: list[str]) -> list[str]:
+        async with self._lock:
+            return [icao for icao in icaos if self._cache.get_model(icao) is None]
+
     async def has_airports(self) -> bool:
         async with self._lock:
             return self._cache.has_airports()

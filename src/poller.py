@@ -1321,6 +1321,9 @@ async def cleanup_loop(db, config) -> None:
         deleted = await db.cleanup_notifications(cutoff.isoformat())
         if deleted:
             log.info("Cleaned %s notification log rows", deleted)
+        deleted_typecards = await db.cleanup_typecard_notifications(cutoff.isoformat())
+        if deleted_typecards:
+            log.info("Cleaned %s typecard notification rows", deleted_typecards)
         await asyncio.sleep(24 * 60 * 60)
 
 

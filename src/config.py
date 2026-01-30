@@ -89,6 +89,13 @@ class Config:
     fr24_airport_batch_size: int
     fr24_aircraft_batch_size: int
     fr24_registration_batch_size: int
+    typecards_poll_interval_seconds: int
+    typecards_batch_size: int
+    typecards_request_delay_seconds: float
+    typecards_jitter_seconds: float
+    typecards_feed_limit: int
+    typecards_timeout_seconds: float
+    typecards_icao_list_path: str
     notification_retention_days: int
     sqlite_path: str
     fr24_web_base_url: str
@@ -115,6 +122,13 @@ def load_config() -> Config:
         fr24_registration_batch_size=min(
             15, max(1, _int_env("FR24_REGISTRATION_BATCH_SIZE", 15))
         ),
+        typecards_poll_interval_seconds=_int_env("TYPECARDS_POLL_INTERVAL_SECONDS", 900),
+        typecards_batch_size=max(1, _int_env("TYPECARDS_BATCH_SIZE", 100)),
+        typecards_request_delay_seconds=_float_env("TYPECARDS_REQUEST_DELAY_SECONDS", 15.0),
+        typecards_jitter_seconds=_float_env("TYPECARDS_JITTER_SECONDS", 0.5),
+        typecards_feed_limit=max(1, _int_env("TYPECARDS_FEED_LIMIT", 200)),
+        typecards_timeout_seconds=_float_env("TYPECARDS_TIMEOUT_SECONDS", 30.0),
+        typecards_icao_list_path=os.getenv("TYPECARDS_ICAO_LIST_PATH", ""),
         notification_retention_days=_int_env("NOTIFICATION_RETENTION_DAYS", 7),
         sqlite_path=os.getenv("SQLITE_PATH", "/data/bot.db"),
         fr24_web_base_url=os.getenv(

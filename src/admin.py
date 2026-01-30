@@ -50,6 +50,8 @@ def _ensure_core_columns(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "guild_settings", "aircraft_change_role_name", "TEXT")
     _ensure_column(conn, "guild_settings", "airport_change_role_id", "TEXT")
     _ensure_column(conn, "guild_settings", "airport_change_role_name", "TEXT")
+    _ensure_column(conn, "guild_settings", "typecards_role_id", "TEXT")
+    _ensure_column(conn, "guild_settings", "typecards_role_name", "TEXT")
     _ensure_column(conn, "guild_settings", "updated_by_name", "TEXT")
     _ensure_column(conn, "subscriptions", "guild_name", "TEXT")
     _ensure_column(conn, "subscriptions", "user_name", "TEXT")
@@ -144,15 +146,39 @@ def _ensure_bot_settings_table(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _ensure_typecard_tables(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS typecard_notification_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT NOT NULL,
+            icao TEXT NOT NULL,
+            flight_id TEXT NOT NULL,
+            notified_at TEXT NOT NULL,
+            UNIQUE (guild_id, icao, flight_id)
+        )
+        '''
+    )
+    conn.execute(
+        '''
+        CREATE INDEX IF NOT EXISTS idx_typecard_notification_log_notified_at
+            ON typecard_notification_log (notified_at)
+        '''
+    )
+    conn.commit()
+
+
 def cmd_status(conn: sqlite3.Connection) -> None:
     _ensure_core_columns(conn)
     _ensure_reference_tables(conn)
     _ensure_credits_table(conn)
     _ensure_bot_settings_table(conn)
+    _ensure_typecard_tables(conn)
     tables = (
         "guild_settings",
         "subscriptions",
         "notification_log",
+        "typecard_notification_log",
         "usage_cache",
         "fr24_credits",
         "fr24_key_credits",
@@ -170,7 +196,8 @@ def cmd_status(conn: sqlite3.Connection) -> None:
 
     cur = conn.execute(
         '''
-        SELECT guild_id, guild_name, notify_channel_id, notify_channel_name, updated_at
+        SELECT guild_id, guild_name, notify_channel_id, notify_channel_name,
+               typecards_role_id, typecards_role_name, updated_at
         FROM guild_settings
         ORDER BY guild_id
         '''
@@ -180,7 +207,15 @@ def cmd_status(conn: sqlite3.Connection) -> None:
         print("Notify channels:")
         _print_rows(
             rows,
-            ["guild_id", "guild_name", "notify_channel_id", "notify_channel_name", "updated_at"],
+            [
+                "guild_id",
+                "guild_name",
+                "notify_channel_id",
+                "notify_channel_name",
+                "typecards_role_id",
+                "typecards_role_name",
+                "updated_at",
+            ],
         )
 
 
@@ -278,6 +313,7 @@ def cmd_guilds(conn: sqlite3.Connection) -> None:
     cur = conn.execute(
         '''
         SELECT guild_id, guild_name, notify_channel_id, notify_channel_name,
+               typecards_role_id, typecards_role_name,
                updated_by, updated_by_name, updated_at
         FROM guild_settings
         ORDER BY guild_id
@@ -291,6 +327,8 @@ def cmd_guilds(conn: sqlite3.Connection) -> None:
             "guild_name",
             "notify_channel_id",
             "notify_channel_name",
+            "typecards_role_id",
+            "typecards_role_name",
             "updated_by",
             "updated_by_name",
             "updated_at",
