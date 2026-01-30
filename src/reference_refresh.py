@@ -162,14 +162,18 @@ def _format_section(
     if label == "NEW":
         for entry in entries:
             row = entry.get("row") or {}
-            detail = _format_fields(row)
-            lines.append(f"- {entry['icao']} - {entry['name']} | {detail}")
+            lines.append(f"- {entry['icao']} - {entry['name']}")
+            for key in sorted(row.keys()):
+                lines.append(f"  - {key}={_format_value(row.get(key))}")
         return lines
     if label == "UPDATED":
         for entry in entries:
             changes = entry.get("changes") or []
-            detail = _format_changes(changes)
-            lines.append(f"- {entry['icao']} - {entry['name']} | {detail}")
+            lines.append(f"- {entry['icao']} - {entry['name']}")
+            for field, old_value, new_value in changes:
+                lines.append(
+                    f"  - {field}: {_format_value(old_value)} -> {_format_value(new_value)}"
+                )
         return lines
     for entry in entries:
         lines.append(f"- {entry['icao']} - {entry['name']}")
