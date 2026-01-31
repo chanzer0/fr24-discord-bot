@@ -42,6 +42,16 @@ def _format_content(role_id: str, icao: str, flight: dict[str, Any]) -> str:
     return f"<@&{role_id}> Missing type card {icao}"
 
 
+def _has_valid_registration(flight: dict[str, Any]) -> bool:
+    value = _pick_first(flight, ["registration", "reg"])
+    if not value:
+        return False
+    cleaned = str(value).strip()
+    if not cleaned:
+        return False
+    return cleaned.upper() != "N/A"
+
+
 def _load_models_from_file(path: str) -> set[str]:
     log = logging.getLogger(__name__)
     try:
@@ -266,6 +276,8 @@ async def typecards_poll_once(bot, db, config, reference_data) -> dict | None:
                 if not flights:
                     continue
                 for flight in flights:
+                    if not _has_valid_registration(flight):
+                        continue
                     flight_key = build_flight_key(flight)
                     if not flight_key:
                         continue

@@ -11216,6 +11216,10 @@
     {
       "icao": "ZULU",
       "name": "BUL Z?l? | Zùlù"
+    },
+    {
+      "icao": "P92",
+      "name": "Tecnam P92 Echo Mk II"
     }
   ]
 }

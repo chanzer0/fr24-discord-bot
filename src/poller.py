@@ -1378,6 +1378,8 @@ async def _process_flights(
     for sub in subscriptions:
         subs_by_guild.setdefault(sub["guild_id"], []).append(sub)
 
+    current_subs_cache: dict[tuple[str, str, tuple[str, ...]], list[dict]] = {}
+
     for flight in flights:
         if not flight:
             continue
@@ -1398,14 +1400,40 @@ async def _process_flights(
             subscription_codes = sorted(
                 {sub["code"] for sub in guild_subs if sub.get("code")}
             )
+            cache_key = (guild_id, sub_type, tuple(subscription_codes))
+            current_rows = current_subs_cache.get(cache_key)
+            if current_rows is None:
+                current_rows = await db.fetch_subscriptions_by_codes(
+                    guild_id=guild_id,
+                    sub_type=sub_type,
+                    codes=subscription_codes,
+                )
+                current_subs_cache[cache_key] = current_rows
+            if not current_rows:
+                continue
             subscription_ids = [sub["id"] for sub in guild_subs]
+            current_ids = {row["id"] for row in current_rows if row.get("id") is not None}
+            current_users = {row["user_id"] for row in current_rows if row.get("user_id")}
+            if not current_ids or not current_users:
+                continue
+            active_subscription_ids = [
+                sub_id for sub_id in subscription_ids if sub_id in current_ids
+            ]
+            if not active_subscription_ids:
+                continue
             already_logged = await db.fetch_logged_subscription_ids(
-                flight_id, subscription_ids
+                flight_id, active_subscription_ids
             )
-            to_notify = [sub for sub in guild_subs if sub["id"] not in already_logged]
+            to_notify = [
+                sub for sub in guild_subs
+                if sub["id"] in current_ids and sub["id"] not in already_logged
+            ]
             if not to_notify:
                 continue
-            user_ids = sorted({sub["user_id"] for sub in to_notify})
+            user_ids = sorted({sub["user_id"] for sub in to_notify if sub.get("user_id")})
+            user_ids = [user_id for user_id in user_ids if user_id in current_users]
+            if not user_ids:
+                continue
             sent = await _send_notification(
                 bot=bot,
                 db=db,

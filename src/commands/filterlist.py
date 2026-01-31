@@ -1007,3 +1007,9 @@ def register(tree, db, config) -> None:
         if file is not None:
             payload["file"] = file
         await interaction.response.send_message(**payload)
+        if file is None:
+            csv_list = ",".join(matches)
+            await interaction.followup.send(
+                content=f"ICAO CSV:\n{csv_list}",
+                ephemeral=True,
+            )
