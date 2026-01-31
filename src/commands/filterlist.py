@@ -986,30 +986,16 @@ def register(tree, db, config) -> None:
 
         matches = sorted(set(matches))
         preview, truncated = _format_preview(matches)
-        field_label = _FIELD_DEFS[field_key]["label"]
-        message = (
-            f'Filter: {field_label} {resolved_op} "{value}"\n'
-            f"Matched {len(matches)} aircraft ICAO codes."
-        )
         needs_file = len(matches) > 99
-        if truncated:
-            message += " List is truncated below; full list attached."
-        elif needs_file:
-            message += " Full list attached for easy copy/paste."
         file = None
         if truncated or needs_file:
             payload = "\n".join(_chunk_codes(matches)).encode("utf-8")
             file = discord.File(io.BytesIO(payload), filename="filterlist.txt")
-        payload = {
-            "content": f"{message}\n```\n{preview}\n```",
-            "ephemeral": True,
-        }
         if file is not None:
-            payload["file"] = file
-        await interaction.response.send_message(**payload)
-        if file is None:
+            await interaction.response.send_message(file=file, ephemeral=True)
+        else:
             csv_list = ",".join(matches)
-            await interaction.followup.send(
-                content=f"ICAO CSV:\n{csv_list}",
+            await interaction.response.send_message(
+                content=f"```\n{csv_list}\n```",
                 ephemeral=True,
             )
